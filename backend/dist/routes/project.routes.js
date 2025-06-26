@@ -1,0 +1,18 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const project_controller_1 = require("../controllers/project.controller");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const page_routes_1 = __importDefault(require("./page.routes"));
+const datasource_routes_1 = __importDefault(require("./datasource.routes"));
+const router = (0, express_1.Router)();
+router.use(auth_middleware_1.authMiddleware);
+router.post('/', project_controller_1.createProject);
+router.get('/', project_controller_1.getProjects);
+router.get('/:id', project_controller_1.getProjectById);
+router.use('/:projectId/pages', page_routes_1.default);
+router.use('/:projectId/datasources', datasource_routes_1.default);
+exports.default = router;

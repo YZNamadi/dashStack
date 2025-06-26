@@ -1,0 +1,87 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(developer)
+  createdAt DateTime @default(now())
+  projects  Project[]
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  owner       User          @relation(fields: [ownerId], references: [id])
+  ownerId     String
+  config      Json?
+  createdAt   DateTime      @default(now())
+  pages       Page[]
+  datasources Datasource[]
+  workflows   Workflow[]
+}
+
+model Page {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  name      String
+  layout    Json?
+}
+
+model Datasource {
+  id        String          @id @default(uuid())
+  project   Project         @relation(fields: [projectId], references: [id])
+  projectId String
+  type      DatasourceType
+  config    Json
+}
+
+model Workflow {
+  id        String        @id @default(uuid())
+  project   Project       @relation(fields: [projectId], references: [id])
+  projectId String
+  name      String
+  trigger   TriggerType
+  type      WorkflowType
+  code      String
+  logs      Json?
+}
+
+enum Role {
+  admin
+  developer
+  viewer
+}
+
+enum DatasourceType {
+  MySQL
+  PostgreSQL
+  REST
+  Python
+  JS
+}
+
+enum TriggerType {
+  cron
+  manual
+  api
+}
+
+enum WorkflowType {
+  Python
+  JavaScript
+}

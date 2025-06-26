@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const page_controller_1 = require("../controllers/page.controller");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const router = (0, express_1.Router)({ mergeParams: true });
+router.use(auth_middleware_1.authMiddleware);
+router.post('/', page_controller_1.createPage);
+router.get('/:pageId', page_controller_1.getPage);
+router.put('/:pageId', page_controller_1.updatePage);
+exports.default = router;

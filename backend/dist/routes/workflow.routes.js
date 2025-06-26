@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const workflow_controller_1 = require("../controllers/workflow.controller");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const router = (0, express_1.Router)({ mergeParams: true });
+router.use(auth_middleware_1.authMiddleware);
+router.post('/', workflow_controller_1.createWorkflow);
+router.get('/', workflow_controller_1.getWorkflows);
+router.post('/:workflowId/run', workflow_controller_1.runWorkflow);
+router.post('/:workflowId/schedule', workflow_controller_1.scheduleWorkflow);
+router.get('/:workflowId/logs', workflow_controller_1.getWorkflowLogs);
+exports.default = router;

@@ -4,7 +4,12 @@ import jwt from 'jsonwebtoken';
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 export interface AuthenticatedRequest extends Request {
-  user?: { userId: string; role: string };
+  user?: { 
+    userId: string; 
+    roles: string[];
+    email: string;
+    name?: string;
+  };
 }
 
 export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
@@ -16,7 +21,12 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
     }
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+        const decoded = jwt.verify(token, JWT_SECRET) as { 
+            userId: string; 
+            roles: string[];
+            email: string;
+            name?: string;
+        };
         req.user = decoded;
         next();
     } catch (error) {

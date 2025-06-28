@@ -13,6 +13,8 @@ router.use(auth_middleware_1.authMiddleware);
 router.post('/', project_controller_1.createProject);
 router.get('/', project_controller_1.getProjects);
 router.get('/:id', project_controller_1.getProjectById);
+router.put('/:id', project_controller_1.renameProject);
+router.delete('/:id', project_controller_1.deleteProject);
 router.use('/:projectId/pages', page_routes_1.default);
 router.use('/:projectId/datasources', datasource_routes_1.default);
 exports.default = router;

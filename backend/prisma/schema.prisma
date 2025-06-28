@@ -17,9 +17,89 @@ model User {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
-  role      Role     @default(developer)
+  name      String?
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
+  
+  // RBAC relationships
+  userRoles UserRole[]
   projects  Project[]
+  
+  // Audit relationships
+  auditEvents AuditEvent[]
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @default(now())
+  
+  // RBAC relationships
+  userRoles UserRole[]
+  permissions RolePermission[]
+  
+  // Role inheritance
+  parentRoleId String?
+  parentRole   Role?   @relation("RoleInheritance", fields: [parentRoleId], references: [id])
+  childRoles   Role[]  @relation("RoleInheritance")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  resource    String   // e.g., "project", "workflow", "datasource"
+  action      String   // e.g., "read", "create", "update", "delete"
+  description String?
+  createdAt   DateTime @default(now())
+  
+  // RBAC relationships
+  rolePermissions RolePermission[]
+  
+  @@unique([resource, action])
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String
+  roleId String
+  assignedAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, roleId])
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+  grantedAt    DateTime @default(now())
+  
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([roleId, permissionId])
+}
+
+model AuditEvent {
+  id         String   @id @default(uuid())
+  timestamp  DateTime @default(now())
+  userId     String?
+  userName   String?
+  action     String   // e.g., "login", "create", "update", "delete"
+  resource   String   // e.g., "project", "workflow", "user"
+  resourceId String?
+  details    Json?
+  ipAddress  String?
+  userAgent  String?
+  severity   String   @default("low") // low, medium, high, critical
+  status     String   @default("success") // success, failure, warning
+  
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
 model Project {
@@ -29,6 +109,7 @@ model Project {
   ownerId     String
   config      Json?
   createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt @default(now())
   pages       Page[]
   datasources Datasource[]
   workflows   Workflow[]
@@ -36,35 +117,36 @@ model Project {
 
 model Page {
   id        String   @id @default(uuid())
-  project   Project  @relation(fields: [projectId], references: [id])
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String
   name      String
   layout    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
 }
 
 model Datasource {
   id        String          @id @default(uuid())
-  project   Project         @relation(fields: [projectId], references: [id])
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String
+  name      String
   type      DatasourceType
   config    Json
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt @default(now())
 }
 
 model Workflow {
   id        String        @id @default(uuid())
-  project   Project       @relation(fields: [projectId], references: [id])
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String
   name      String
   trigger   TriggerType
   type      WorkflowType
   code      String
   logs      Json?
-}
-
-enum Role {
-  admin
-  developer
-  viewer
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt @default(now())
 }
 
 enum DatasourceType {

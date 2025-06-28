@@ -9,8 +9,16 @@ import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 export const createWorkflow = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { projectId } = req.params;
   const { name, trigger, type, code } = req.body;
+  const ownerId = req.user?.userId;
 
   try {
+    // Verify project ownership
+    const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
+    if (!project) {
+        res.status(404).json({ message: 'Project not found or you do not have access' });
+        return;
+    }
+
     const workflow = await prisma.workflow.create({
       data: {
         projectId,
@@ -29,8 +37,16 @@ export const createWorkflow = async (req: AuthenticatedRequest, res: Response): 
 
 export const getWorkflows = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { projectId } = req.params;
+  const ownerId = req.user?.userId;
 
   try {
+    // Verify project ownership
+    const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
+    if (!project) {
+        res.status(404).json({ message: 'Project not found or you do not have access' });
+        return;
+    }
+
     const workflows = await prisma.workflow.findMany({
       where: { projectId },
     });
@@ -41,16 +57,23 @@ export const getWorkflows = async (req: AuthenticatedRequest, res: Response): Pr
 };
 
 export const runWorkflow = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const { workflowId } = req.params;
+  const { projectId, workflowId } = req.params;
   const { input } = req.body;
+  const ownerId = req.user?.userId;
 
   try {
-    const workflow = await prisma.workflow.findUnique({
-      where: { id: workflowId },
+    const workflow = await prisma.workflow.findFirst({
+        where: {
+            id: workflowId,
+            projectId: projectId,
+            project: {
+                ownerId: ownerId,
+            },
+        },
     });
 
     if (!workflow) {
-      res.status(404).json({ message: 'Workflow not found' });
+      res.status(404).json({ message: 'Workflow not found or you do not have access' });
       return;
     }
 
@@ -62,7 +85,7 @@ export const runWorkflow = async (req: AuthenticatedRequest, res: Response): Pro
       timestamp: new Date().toISOString(),
       input,
       output: result,
-      success: !result.error,
+      success: true,
     });
 
     await prisma.workflow.update({
@@ -72,6 +95,33 @@ export const runWorkflow = async (req: AuthenticatedRequest, res: Response): Pro
 
     res.json(result);
   } catch (error: any) {
+    // Log the error
+    const workflow = await prisma.workflow.findFirst({
+        where: {
+            id: workflowId,
+            projectId: projectId,
+            project: {
+                ownerId: ownerId,
+            },
+        },
+    });
+    
+    if (workflow) {
+      const logs = workflow.logs as any[] || [];
+      logs.push({
+        timestamp: new Date().toISOString(),
+        input: req.body.input,
+        output: null,
+        success: false,
+        error: error.message,
+      });
+
+      await prisma.workflow.update({
+        where: { id: workflowId },
+        data: { logs },
+      });
+    }
+    
     res.status(500).json({ message: 'Error running workflow', error: error.message });
   }
 };
@@ -89,22 +139,55 @@ export const scheduleWorkflow = async (req: AuthenticatedRequest, res: Response)
 };
 
 export const getWorkflowLogs = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const { workflowId } = req.params;
+  const { projectId, workflowId } = req.params;
+  const ownerId = req.user?.userId;
 
   try {
-    const workflow = await prisma.workflow.findUnique({
-      where: { id: workflowId },
+    const workflow = await prisma.workflow.findFirst({
+        where: {
+            id: workflowId,
+            projectId: projectId,
+            project: {
+                ownerId: ownerId,
+            },
+        },
       select: { logs: true },
     });
 
     if (!workflow) {
-      res.status(404).json({ message: 'Workflow not found' });
+      res.status(404).json({ message: 'Workflow not found or you do not have access' });
       return;
     }
 
     res.json(workflow.logs || []);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching workflow logs', error });
+  }
+};
+
+export const deleteWorkflow = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { projectId, workflowId } = req.params;
+  const ownerId = req.user?.userId;
+
+  try {
+    const workflow = await prisma.workflow.findFirst({
+        where: {
+            id: workflowId,
+            projectId: projectId,
+            project: {
+                ownerId: ownerId,
+            },
+        },
+    });
+    if (!workflow) {
+      res.status(404).json({ message: 'Workflow not found or you do not have access' });
+      return;
+    }
+
+    await prisma.workflow.delete({ where: { id: workflowId } });
+    res.json({ message: 'Workflow deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting workflow', error });
   }
 };
 

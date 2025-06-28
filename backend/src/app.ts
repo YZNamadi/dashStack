@@ -14,15 +14,19 @@ import projectRoutes from './routes/project.routes';
 import datasourceRoutes from './routes/datasource.routes';
 import pageRoutes from './routes/page.routes';
 import workflowRoutes from './routes/workflow.routes';
+import rbacRoutes from './routes/rbac.routes';
+import auditRoutes from './routes/audit.routes';
 
 app.get('/', (req, res) => {
   res.send('Hello from DashStack!');
 });
 
-app.use('/auth', authRoutes);
-app.use('/projects', projectRoutes);
-app.use('/projects/:projectId/datasources', datasourceRoutes);
-app.use('/projects/:projectId/pages', pageRoutes);
-app.use('/projects/:projectId/workflows', workflowRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/projects/:projectId/datasources', datasourceRoutes);
+app.use('/api/projects/:projectId/pages', pageRoutes);
+app.use('/api/projects/:projectId/workflows', workflowRoutes);
+app.use('/api/rbac', rbacRoutes);
+app.use('/api/audit', auditRoutes);
 
 export default app; 

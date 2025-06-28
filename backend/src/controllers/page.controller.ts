@@ -30,12 +30,22 @@ export const createPage = async (req: AuthenticatedRequest, res: Response): Prom
 };
 
 export const getPage = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const { pageId } = req.params;
+  const { projectId, pageId } = req.params;
+  const ownerId = req.user?.userId;
 
   try {
-    const page = await prisma.page.findUnique({ where: { id: pageId } });
+    const page = await prisma.page.findFirst({
+      where: {
+        id: pageId,
+        projectId: projectId,
+        project: {
+          ownerId: ownerId,
+        },
+      },
+    });
+
     if (!page) {
-      res.status(404).json({ message: 'Page not found' });
+      res.status(404).json({ message: 'Page not found or you do not have access' });
       return;
     }
     // Optional: Add ownership check here too if needed, though access is already gated by project
@@ -46,10 +56,27 @@ export const getPage = async (req: AuthenticatedRequest, res: Response): Promise
 };
 
 export const updatePage = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const { pageId } = req.params;
+  const { projectId, pageId } = req.params;
   const { name, layout } = req.body;
+  const ownerId = req.user?.userId;
 
   try {
+    // First, verify ownership
+    const existingPage = await prisma.page.findFirst({
+        where: {
+            id: pageId,
+            projectId: projectId,
+            project: {
+                ownerId: ownerId,
+            },
+        },
+    });
+
+    if (!existingPage) {
+        res.status(404).json({ message: 'Page not found or you do not have access' });
+        return;
+    }
+
     const page = await prisma.page.update({
       where: { id: pageId },
       data: {

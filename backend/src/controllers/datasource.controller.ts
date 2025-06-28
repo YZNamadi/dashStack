@@ -7,12 +7,21 @@ import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 export const createDatasource = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { projectId } = req.params;
-  const { type, config } = req.body;
+  const { type, config, name } = req.body;
+  const ownerId = req.user?.userId;
 
   try {
+    // Verify project ownership
+    const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
+    if (!project) {
+        res.status(404).json({ message: 'Project not found or you do not have access' });
+        return;
+    }
+
     const datasource = await prisma.datasource.create({
       data: {
         projectId,
+        name,
         type,
         config,
       },
@@ -25,8 +34,15 @@ export const createDatasource = async (req: AuthenticatedRequest, res: Response)
 
 export const getDatasources = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const { projectId } = req.params;
+    const ownerId = req.user?.userId;
   
     try {
+      // Verify project ownership
+      const project = await prisma.project.findFirst({ where: { id: projectId, ownerId } });
+      if (!project) {
+          res.status(404).json({ message: 'Project not found or you do not have access' });
+          return;
+      }
       const datasources = await prisma.datasource.findMany({
         where: { projectId },
       });
@@ -37,13 +53,22 @@ export const getDatasources = async (req: AuthenticatedRequest, res: Response): 
   };
 
 export const runDatasourceQuery = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { datasourceId } = req.params;
+    const { projectId, datasourceId } = req.params;
     const { query, method = 'GET', body, headers = {} } = req.body;
+    const ownerId = req.user?.userId;
 
     try {
-        const datasource = await prisma.datasource.findUnique({ where: { id: datasourceId } });
+        const datasource = await prisma.datasource.findFirst({ 
+            where: { 
+                id: datasourceId,
+                projectId: projectId,
+                project: {
+                    ownerId: ownerId,
+                },
+            },
+        });
         if (!datasource) {
-            res.status(404).json({ message: 'Datasource not found' });
+            res.status(404).json({ message: 'Datasource not found or you do not have access' });
             return;
         }
 
@@ -104,4 +129,30 @@ export const runDatasourceQuery = async (req: AuthenticatedRequest, res: Respons
     } catch (error: any) {
         res.status(500).json({ message: 'Error running query', error: error.message });
     }
+};
+
+export const deleteDatasource = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { projectId, datasourceId } = req.params;
+  const ownerId = req.user?.userId;
+
+  try {
+    const datasource = await prisma.datasource.findFirst({ 
+        where: {
+            id: datasourceId,
+            projectId: projectId,
+            project: {
+                ownerId: ownerId,
+            },
+        },
+    });
+    if (!datasource) {
+      res.status(404).json({ message: 'Datasource not found or you do not have access' });
+      return;
+    }
+
+    await prisma.datasource.delete({ where: { id: datasourceId } });
+    res.json({ message: 'Datasource deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting datasource', error });
+  }
 }; 

@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getProjectById = exports.getProjects = exports.createProject = void 0;
+exports.deleteProject = exports.renameProject = exports.getProjectById = exports.getProjects = exports.createProject = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const createProject = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -70,3 +70,47 @@ const getProjectById = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.getProjectById = getProjectById;
+const renameProject = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const { id } = req.params;
+    const { name } = req.body;
+    const ownerId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!name) {
+        res.status(400).json({ message: 'Name is required' });
+        return;
+    }
+    try {
+        const project = yield prisma_1.default.project.updateMany({
+            where: { id, ownerId },
+            data: { name },
+        });
+        if (project.count === 0) {
+            res.status(404).json({ message: 'Project not found or not owned by user' });
+            return;
+        }
+        res.json({ message: 'Project renamed successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error renaming project', error });
+    }
+});
+exports.renameProject = renameProject;
+const deleteProject = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const { id } = req.params;
+    const ownerId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    try {
+        const project = yield prisma_1.default.project.deleteMany({
+            where: { id, ownerId },
+        });
+        if (project.count === 0) {
+            res.status(404).json({ message: 'Project not found or not owned by user' });
+            return;
+        }
+        res.json({ message: 'Project deleted successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error deleting project', error });
+    }
+});
+exports.deleteProject = deleteProject;

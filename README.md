@@ -61,5 +61,3 @@ Sensitive files, build artifacts, and local environment files are excluded from 
 ## Contributing
 Pull requests are welcome! Please open issues for bugs or feature requests.
 
-## License
-MIT 

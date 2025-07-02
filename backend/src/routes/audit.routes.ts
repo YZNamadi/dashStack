@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import asyncHandler from 'express-async-handler';
 import { 
   getAuditEvents,
   getAuditStats,
@@ -16,24 +17,24 @@ const router = Router();
 router.use(authMiddleware);
 
 // Get audit events with filtering
-router.get('/events', getAuditEvents);
+router.get('/events', asyncHandler(getAuditEvents));
 
 // Get audit statistics
-router.get('/stats', getAuditStats);
+router.get('/stats', asyncHandler(getAuditStats));
 
 // Export audit events to CSV
-router.get('/export', exportAuditEvents);
+router.get('/export', asyncHandler(exportAuditEvents));
 
 // Clean up old audit events
-router.post('/cleanup', cleanupOldEvents);
+router.post('/cleanup', asyncHandler(cleanupOldEvents));
 
 // Get specific audit event
-router.get('/events/:id', getAuditEvent);
+router.get('/events/:id', asyncHandler(getAuditEvent));
 
 // Get recent audit events for dashboard
-router.get('/recent', getRecentEvents);
+router.get('/recent', asyncHandler(getRecentEvents));
 
 // Get audit events by user
-router.get('/users/:userId/events', getUserAuditEvents);
+router.get('/users/:userId/events', asyncHandler(getUserAuditEvents));
 
 export default router; 

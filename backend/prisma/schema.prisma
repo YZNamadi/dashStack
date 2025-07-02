@@ -18,6 +18,7 @@ model User {
   email     String   @unique
   password  String
   name      String?
+  // googleId  String?  @unique // Uncomment for Google SSO support
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt @default(now())
@@ -28,6 +29,9 @@ model User {
   
   // Audit relationships
   auditEvents AuditEvent[]
+  
+  // Page version relationships
+  pageVersions PageVersion[]
 }
 
 model Role {
@@ -54,11 +58,12 @@ model Permission {
   action      String   // e.g., "read", "create", "update", "delete"
   description String?
   createdAt   DateTime @default(now())
+  resourceId  String?  // Resource-level permission (optional)
   
   // RBAC relationships
   rolePermissions RolePermission[]
   
-  @@unique([resource, action])
+  @@unique([resource, action, resourceId])
 }
 
 model UserRole {
@@ -66,11 +71,13 @@ model UserRole {
   userId String
   roleId String
   assignedAt DateTime @default(now())
+  resourceId String? // Resource-level assignment (optional)
   
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
   
-  @@unique([userId, roleId])
+  @@unique([userId, roleId, resourceId])
+  @@map("user_roles")
 }
 
 model RolePermission {
@@ -113,6 +120,7 @@ model Project {
   pages       Page[]
   datasources Datasource[]
   workflows   Workflow[]
+  integrations Integration[]
 }
 
 model Page {
@@ -123,6 +131,22 @@ model Page {
   layout    Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt @default(now())
+  
+  // Page version relationships
+  versions PageVersion[]
+}
+
+model PageVersion {
+  id        String   @id @default(uuid())
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  pageId    String
+  version   Int
+  content   Json
+  createdAt DateTime @default(now())
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  
+  @@map("page_versions")
 }
 
 model Datasource {
@@ -132,27 +156,58 @@ model Datasource {
   name      String
   type      DatasourceType
   config    Json
+  schemaCache Json?
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt @default(now())
 }
 
 model Workflow {
-  id        String        @id @default(uuid())
-  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String           @id @default(uuid())
+  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  name        String
+  description String?
+  trigger     TriggerType
+  type        WorkflowType
+  code        String
+  logs        Json?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt @default(now())
+  
+  // Workflow triggers
+  triggers WorkflowTrigger[]
+}
+
+model WorkflowTrigger {
+  id         String        @id @default(uuid())
+  workflow   Workflow      @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowId String
+  type       TriggerType
+  config     Json          // Configuration for the trigger (cron expression, webhook path, etc.)
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt @default(now())
+  
+  @@unique([workflowId, type])
+}
+
+model Integration {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String
   name      String
-  trigger   TriggerType
-  type      WorkflowType
-  code      String
-  logs      Json?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt @default(now())
+  type      String // e.g., Database, REST, GraphQL
+  config    Json
+  status    String @default("Disconnected")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
 }
 
 enum DatasourceType {
   MySQL
   PostgreSQL
   REST
+  GraphQL
   Python
   JS
 }
@@ -160,6 +215,8 @@ enum DatasourceType {
 enum TriggerType {
   cron
   manual
+  webhook
+  datasource
   api
 }
 

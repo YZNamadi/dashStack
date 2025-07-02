@@ -2,13 +2,15 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  testMatch: ['<rootDir>/src/tests/**/*.test.ts'],
+  testMatch: [
+    '<rootDir>/tests/**/*.test.ts'
+  ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
-      tsconfig: 'tsconfig.json'
+      tsconfig: 'tsconfig.test.json'
     }]
   },
   setupFiles: ['dotenv/config'],

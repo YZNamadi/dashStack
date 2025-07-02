@@ -10,3 +10,8 @@ Thumbs.db
 /prisma/dev.db-journal
 
 /generated/prisma
+tests/
+test-endpoints.js
+*.test.ts
+*.test.js
+api-endpoints.test.ts

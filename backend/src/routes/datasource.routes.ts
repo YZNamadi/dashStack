@@ -1,14 +1,18 @@
 import { Router } from 'express';
-import { createDatasource, getDatasources, runDatasourceQuery, deleteDatasource } from '../controllers/datasource.controller';
+import asyncHandler from 'express-async-handler';
+import { createDatasource, getDatasources, runDatasourceQuery, deleteDatasource, testDatasourceConnection, getDatasourceSchema, updateDatasource } from '../controllers/datasource.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
 
 const router = Router({ mergeParams: true });
 
-router.use(authMiddleware);
+router.post('/', authMiddleware, asyncHandler(createDatasource));
+router.get('/', authMiddleware, asyncHandler(getDatasources));
+router.put('/:datasourceId', authMiddleware, asyncHandler(updateDatasource));
+router.post('/:datasourceId/run', authMiddleware, asyncHandler(runDatasourceQuery));
+router.delete('/:datasourceId', authMiddleware, asyncHandler(deleteDatasource));
 
-router.post('/', createDatasource);
-router.get('/', getDatasources);
-router.post('/:datasourceId/run', runDatasourceQuery);
-router.delete('/:datasourceId', deleteDatasource);
+// New advanced datasource routes
+router.post('/test-connection', authMiddleware, asyncHandler(testDatasourceConnection));
+router.get('/:datasourceId/schema', authMiddleware, asyncHandler(getDatasourceSchema));
 
 export default router; 

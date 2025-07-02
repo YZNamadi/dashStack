@@ -106,15 +106,24 @@ export class RBACService {
     try {
       // Create default permissions
       for (const perm of RBACService.DEFAULT_PERMISSIONS) {
-        await prisma.permission.upsert({
-          where: { resource_action: { resource: perm.resource, action: perm.action } },
-          update: {},
-          create: {
+        const existingPermission = await prisma.permission.findFirst({
+          where: { 
             resource: perm.resource,
             action: perm.action,
-            description: perm.description,
+            resourceId: null 
           },
         });
+        
+        if (!existingPermission) {
+          await prisma.permission.create({
+            data: {
+              resource: perm.resource,
+              action: perm.action,
+              description: perm.description,
+              resourceId: null,
+            },
+          });
+        }
       }
 
       // Create default roles
@@ -132,8 +141,12 @@ export class RBACService {
         // Assign permissions to role
         for (const permString of roleData.permissions) {
           const [resource, action] = permString.split(':');
-          const permission = await prisma.permission.findUnique({
-            where: { resource_action: { resource, action } },
+          const permission = await prisma.permission.findFirst({
+            where: { 
+              resource,
+              action,
+              resourceId: null
+            },
           });
 
           if (permission) {
@@ -187,9 +200,9 @@ export class RBACService {
   }
 
   /**
-   * Check if user has a specific permission
+   * Check if user has a specific permission, optionally for a specific resource
    */
-  static async hasPermission(userId: string, resource: string, action: string): Promise<boolean> {
+  static async hasPermission(userId: string, resource: string, action: string, resourceId?: string): Promise<boolean> {
     const user = await this.getUserWithRoles(userId);
     if (!user) return false;
 
@@ -197,6 +210,8 @@ export class RBACService {
 
     // Collect all permissions from user's roles
     for (const userRole of user.userRoles) {
+      // If resourceId is specified, only consider roles for that resource or global (null resourceId)
+      if (resourceId && userRole.resourceId !== null && userRole.resourceId !== resourceId) continue;
       const rolePermissions = await this.getEffectivePermissions(userRole.role.id);
       rolePermissions.forEach(perm => allPermissions.add(`${perm.resource}:${perm.action}`));
     }
@@ -243,8 +258,12 @@ export class RBACService {
 
     for (const permString of permissionStrings) {
       const [resource, action] = permString.split(':');
-      const permission = await prisma.permission.findUnique({
-        where: { resource_action: { resource, action } },
+      const permission = await prisma.permission.findFirst({
+        where: { 
+          resource,
+          action,
+          resourceId: null // Global permission
+        },
       });
       if (permission) {
         permissionObjects.push(permission);
@@ -255,30 +274,48 @@ export class RBACService {
   }
 
   /**
-   * Assign a role to a user
+   * Assign a role to a user, optionally for a specific resource
    */
-  static async assignRoleToUser(userId: string, roleId: string): Promise<void> {
-    await prisma.userRole.upsert({
+  static async assignRoleToUser(userId: string, roleId: string, resourceId?: string): Promise<void> {
+    const existingUserRole = await prisma.userRole.findFirst({
       where: {
-        userId_roleId: { userId, roleId },
-      },
-      update: {},
-      create: {
         userId,
         roleId,
+        resourceId: resourceId || null,
+      },
+    });
+
+    if (existingUserRole) {
+      // Role already assigned, no need to do anything
+      return;
+    }
+
+    await prisma.userRole.create({
+      data: {
+        userId,
+        roleId,
+        resourceId: resourceId || null,
       },
     });
   }
 
   /**
-   * Remove a role from a user
+   * Remove a role from a user, optionally for a specific resource
    */
-  static async removeRoleFromUser(userId: string, roleId: string): Promise<void> {
-    await prisma.userRole.delete({
+  static async removeRoleFromUser(userId: string, roleId: string, resourceId?: string): Promise<void> {
+    const userRole = await prisma.userRole.findFirst({
       where: {
-        userId_roleId: { userId, roleId },
+        userId,
+        roleId,
+        resourceId: resourceId || null,
       },
     });
+
+    if (userRole) {
+      await prisma.userRole.delete({
+        where: { id: userRole.id },
+      });
+    }
   }
 
   /**
@@ -301,8 +338,12 @@ export class RBACService {
     if (data.permissions) {
       for (const permString of data.permissions) {
         const [resource, action] = permString.split(':');
-        const permission = await prisma.permission.findUnique({
-          where: { resource_action: { resource, action } },
+        const permission = await prisma.permission.findFirst({
+          where: { 
+            resource,
+            action,
+            resourceId: null // Global permission
+          },
         });
 
         if (permission) {
@@ -346,8 +387,12 @@ export class RBACService {
       // Add new permissions
       for (const permString of data.permissions) {
         const [resource, action] = permString.split(':');
-        const permission = await prisma.permission.findUnique({
-          where: { resource_action: { resource, action } },
+        const permission = await prisma.permission.findFirst({
+          where: { 
+            resource,
+            action,
+            resourceId: null // Global permission
+          },
         });
 
         if (permission) {

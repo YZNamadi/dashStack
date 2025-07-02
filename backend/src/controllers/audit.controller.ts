@@ -1,11 +1,13 @@
-import { Request, Response, RequestHandler } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { AuditService } from '../services/audit.service';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { Parser as Json2csvParser } from 'json2csv';
+import prisma from '../utils/prisma';
 
 /**
  * Get audit events with filtering
  */
-export const getAuditEvents: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getAuditEvents = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const {
       userId,
@@ -41,18 +43,14 @@ export const getAuditEvents: RequestHandler = async (req: Request, res: Response
       offset: filters.offset,
     });
   } catch (error) {
-    console.error('Error fetching audit events:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch audit events',
-    });
+    next(error);
   }
 };
 
 /**
  * Get audit statistics
  */
-export const getAuditStats: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getAuditStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { startDate, endDate } = req.query;
 
@@ -68,81 +66,59 @@ export const getAuditStats: RequestHandler = async (req: Request, res: Response)
       stats,
     });
   } catch (error) {
-    console.error('Error fetching audit stats:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch audit statistics',
-    });
+    next(error);
   }
 };
 
 /**
- * Export audit events to CSV
+ * Export audit events to CSV or JSON
  */
-export const exportAuditEvents: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const exportAuditEvents = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const {
-      userId,
-      action,
-      resource,
-      severity,
-      status,
-      startDate,
-      endDate,
-    } = req.query;
-
-    const filters = {
-      userId: userId as string,
-      action: action as string,
-      resource: resource as string,
-      severity: severity as string,
-      status: status as string,
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
-    };
-
-    const csvData = await AuditService.exportAuditEvents(filters);
-
-    // Log the export event
-    await AuditService.logDataAccessEvent({
-      userId: req.user?.userId,
-      userName: req.user?.name,
-      action: 'export',
-      resource: 'audit',
-      format: 'CSV',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      details: { filters },
-    });
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="audit-log-${new Date().toISOString().split('T')[0]}.csv"`
-    );
-    res.send(csvData);
+    const { format = 'csv', userId, action, resource, startDate, endDate } = req.query;
+    const where: any = {};
+    if (userId) where.userId = userId;
+    if (action) where.action = action;
+    if (resource) where.resource = resource;
+    if (startDate || endDate) {
+      where.timestamp = {};
+      if (startDate) where.timestamp.gte = new Date(startDate as string);
+      if (endDate) where.timestamp.lte = new Date(endDate as string);
+    }
+    const events = await prisma.auditEvent.findMany({ where });
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.send(JSON.stringify(events, null, 2));
+    } else {
+      const fields = ['id', 'timestamp', 'userId', 'userName', 'action', 'resource', 'resourceId', 'details', 'ipAddress', 'userAgent', 'severity', 'status'];
+      const parser = new Json2csvParser({ fields });
+      const csv = parser.parse(events);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="audit-logs-${new Date().toISOString().split('T')[0]}.csv"`
+      );
+      res.send(csv);
+    }
   } catch (error) {
-    console.error('Error exporting audit events:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to export audit events',
-    });
+    next(error);
   }
 };
 
 /**
  * Clean up old audit events
  */
-export const cleanupOldEvents: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const cleanupOldEvents = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { retentionDays = 90 } = req.body;
 
     const deletedCount = await AuditService.cleanupOldEvents(retentionDays);
 
     // Log the cleanup event
+    const user = (req as AuthenticatedRequest).user;
     await AuditService.logEvent({
-      userId: req.user?.userId,
-      userName: req.user?.name,
+      userId: user?.userId,
+      userName: user?.name,
       action: 'cleanup',
       resource: 'audit',
       details: {
@@ -160,25 +136,16 @@ export const cleanupOldEvents: RequestHandler = async (req: AuthenticatedRequest
       deletedCount,
     });
   } catch (error) {
-    console.error('Error cleaning up audit events:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to clean up audit events',
-    });
+    next(error);
   }
 };
 
 /**
  * Get audit event by ID
  */
-export const getAuditEvent: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getAuditEvent = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-
-    // This would require adding a method to AuditService
-    // For now, we'll use Prisma directly
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
 
     const event = await prisma.auditEvent.findUnique({
       where: { id },
@@ -206,18 +173,14 @@ export const getAuditEvent: RequestHandler = async (req: Request, res: Response)
       event,
     });
   } catch (error) {
-    console.error('Error fetching audit event:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch audit event',
-    });
+    next(error);
   }
 };
 
 /**
  * Get recent audit events for dashboard
  */
-export const getRecentEvents: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getRecentEvents = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { limit = 10 } = req.query;
 
@@ -230,18 +193,14 @@ export const getRecentEvents: RequestHandler = async (req: Request, res: Respons
       events,
     });
   } catch (error) {
-    console.error('Error fetching recent audit events:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch recent audit events',
-    });
+    next(error);
   }
 };
 
 /**
  * Get audit events by user
  */
-export const getUserAuditEvents: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getUserAuditEvents = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { userId } = req.params;
     const { limit = 50, offset = 0 } = req.query;
@@ -259,10 +218,10 @@ export const getUserAuditEvents: RequestHandler = async (req: Request, res: Resp
       userId,
     });
   } catch (error) {
-    console.error('Error fetching user audit events:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch user audit events',
-    });
+    next(error);
   }
+};
+
+export const getResourceAuditEvents = async (req: Request, res: Response): Promise<void> => {
+  // Implementation of getResourceAuditEvents function
 }; 

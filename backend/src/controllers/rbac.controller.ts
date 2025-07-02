@@ -1,4 +1,4 @@
-import { Request, Response, RequestHandler } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { RBACService } from '../services/rbac.service';
 import { AuditService } from '../services/audit.service';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
@@ -6,14 +6,14 @@ import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 /**
  * Initialize RBAC system with default roles and permissions
  */
-export const initializeRBAC: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const initializeRBAC = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     await RBACService.initializeRBAC();
     
     // Log the initialization
     await AuditService.logEvent({
-      userId: req.user?.userId,
-      userName: req.user?.name,
+      userId: (req as AuthenticatedRequest).user?.userId,
+      userName: (req as AuthenticatedRequest).user?.name,
       action: 'rbac_initialized',
       resource: 'system',
       ipAddress: req.ip,
@@ -26,50 +26,39 @@ export const initializeRBAC: RequestHandler = async (req: AuthenticatedRequest, 
       message: 'RBAC system initialized successfully' 
     });
   } catch (error) {
-    console.error('Error initializing RBAC:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to initialize RBAC system' 
-    });
+    next(error);
   }
 };
 
 /**
  * Get all roles
  */
-export const getRoles: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getRoles = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const roles = await RBACService.getAllRoles();
     res.json({ success: true, roles });
   } catch (error) {
-    console.error('Error fetching roles:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch roles' 
-    });
+    next(error);
   }
 };
 
 /**
  * Get all permissions
  */
-export const getPermissions: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getPermissions = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const permissions = await RBACService.getAllPermissions();
     res.json({ success: true, permissions });
   } catch (error) {
-    console.error('Error fetching permissions:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch permissions' 
-    });
+    next(error);
   }
 };
 
 /**
+/**
  * Create a new role
  */
-export const createRole: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const createRole = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { name, description, permissions, parentRoleId } = req.body;
 
@@ -90,8 +79,8 @@ export const createRole: RequestHandler = async (req: AuthenticatedRequest, res:
 
     // Log the role creation
     await AuditService.logCRUDEvent({
-      userId: req.user?.userId,
-      userName: req.user?.name,
+      userId: (req as AuthenticatedRequest).user?.userId,
+      userName: (req as AuthenticatedRequest).user?.name,
       action: 'create',
       resource: 'role',
       resourceId: role.id,
@@ -102,18 +91,15 @@ export const createRole: RequestHandler = async (req: AuthenticatedRequest, res:
 
     res.status(201).json({ success: true, role });
   } catch (error) {
-    console.error('Error creating role:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to create role' 
-    });
+    next(error);
   }
 };
 
 /**
+/**
  * Update a role
  */
-export const updateRole: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const updateRole = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const { name, description, permissions, parentRoleId } = req.body;
@@ -127,8 +113,8 @@ export const updateRole: RequestHandler = async (req: AuthenticatedRequest, res:
 
     // Log the role update
     await AuditService.logCRUDEvent({
-      userId: req.user?.userId,
-      userName: req.user?.name,
+      userId: (req as AuthenticatedRequest).user?.userId,
+      userName: (req as AuthenticatedRequest).user?.name,
       action: 'update',
       resource: 'role',
       resourceId: role.id,
@@ -139,18 +125,14 @@ export const updateRole: RequestHandler = async (req: AuthenticatedRequest, res:
 
     res.json({ success: true, role });
   } catch (error) {
-    console.error('Error updating role:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to update role' 
-    });
+    next(error);
   }
 };
 
 /**
  * Delete a role
  */
-export const deleteRole: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const deleteRole = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -162,8 +144,8 @@ export const deleteRole: RequestHandler = async (req: AuthenticatedRequest, res:
 
     // Log the role deletion
     await AuditService.logCRUDEvent({
-      userId: req.user?.userId,
-      userName: req.user?.name,
+      userId: (req as AuthenticatedRequest).user?.userId,
+      userName: (req as AuthenticatedRequest).user?.name,
       action: 'delete',
       resource: 'role',
       resourceId: id,
@@ -177,17 +159,13 @@ export const deleteRole: RequestHandler = async (req: AuthenticatedRequest, res:
       message: 'Role deleted successfully' 
     });
   } catch (error) {
-    console.error('Error deleting role:', error);
     if (error instanceof Error && error.message.includes('system roles')) {
       res.status(400).json({ 
         success: false, 
         message: error.message 
       });
     } else {
-      res.status(500).json({ 
-        success: false, 
-        message: 'Failed to delete role' 
-      });
+      next(error);
     }
   }
 };
@@ -195,7 +173,7 @@ export const deleteRole: RequestHandler = async (req: AuthenticatedRequest, res:
 /**
  * Get user roles and permissions
  */
-export const getUserRoles: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getUserRoles = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { userId } = req.params;
     const user = await RBACService.getUserWithRoles(userId);
@@ -235,20 +213,17 @@ export const getUserRoles: RequestHandler = async (req: Request, res: Response):
       }
     });
   } catch (error) {
-    console.error('Error fetching user roles:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch user roles' 
-    });
+    next(error);
   }
 };
 
 /**
- * Assign a role to a user
+/**
+ * Assign a role to a user (optionally for a specific resource)
  */
-export const assignRoleToUser: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const assignRoleToUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { userId, roleId } = req.body;
+    const { userId, roleId, resourceId } = req.body;
 
     if (!userId || !roleId) {
       res.status(400).json({ 
@@ -267,12 +242,12 @@ export const assignRoleToUser: RequestHandler = async (req: AuthenticatedRequest
       return;
     }
 
-    await RBACService.assignRoleToUser(userId, roleId);
+    await RBACService.assignRoleToUser(userId, roleId, resourceId);
 
     // Log the role assignment
     await AuditService.logPermissionEvent({
-      userId: req.user?.userId,
-      userName: req.user?.name,
+      userId: (req as AuthenticatedRequest).user?.userId,
+      userName: (req as AuthenticatedRequest).user?.name,
       action: 'role_assigned',
       resource: 'user_role',
       resourceId: userId,
@@ -280,7 +255,7 @@ export const assignRoleToUser: RequestHandler = async (req: AuthenticatedRequest
       targetUserName: user.name ?? undefined,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
-      details: { roleId }
+      details: { roleId, resourceId }
     });
 
     res.json({ 
@@ -288,20 +263,17 @@ export const assignRoleToUser: RequestHandler = async (req: AuthenticatedRequest
       message: 'Role assigned successfully' 
     });
   } catch (error) {
-    console.error('Error assigning role to user:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to assign role to user' 
-    });
+    next(error);
   }
 };
 
 /**
- * Remove a role from a user
+/**
+ * Remove a role from a user (optionally for a specific resource)
  */
-export const removeRoleFromUser: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const removeRoleFromUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { userId, roleId } = req.body;
+    const { userId, roleId, resourceId } = req.body;
 
     if (!userId || !roleId) {
       res.status(400).json({ 
@@ -320,12 +292,12 @@ export const removeRoleFromUser: RequestHandler = async (req: AuthenticatedReque
       return;
     }
 
-    await RBACService.removeRoleFromUser(userId, roleId);
+    await RBACService.removeRoleFromUser(userId, roleId, resourceId);
 
     // Log the role removal
     await AuditService.logPermissionEvent({
-      userId: req.user?.userId,
-      userName: req.user?.name,
+      userId: (req as AuthenticatedRequest).user?.userId,
+      userName: (req as AuthenticatedRequest).user?.name,
       action: 'role_removed',
       resource: 'user_role',
       resourceId: userId,
@@ -333,7 +305,7 @@ export const removeRoleFromUser: RequestHandler = async (req: AuthenticatedReque
       targetUserName: user.name ?? undefined,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
-      details: { roleId }
+      details: { roleId, resourceId }
     });
 
     res.json({ 
@@ -341,59 +313,33 @@ export const removeRoleFromUser: RequestHandler = async (req: AuthenticatedReque
       message: 'Role removed successfully' 
     });
   } catch (error) {
-    console.error('Error removing role from user:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to remove role from user' 
-    });
+    next(error);
   }
 };
 
 /**
- * Check if user has permission
+/**
+ * Check if a user has a permission (optionally for a specific resource)
  */
-export const checkPermission: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const checkPermission = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { userId, permission } = req.params;
-
+    const { userId, permission, resourceId } = req.body;
     if (!userId || !permission) {
-      res.status(400).json({ 
-        success: false, 
-        message: 'User ID and permission are required' 
-      });
+      res.status(400).json({ success: false, message: 'User ID and permission are required' });
       return;
     }
-
     const [resource, action] = permission.split(':');
-    if (!resource || !action) {
-      res.status(400).json({ 
-        success: false, 
-        message: 'Invalid permission format. Expected format: resource:action' 
-      });
-      return;
-    }
-
-    const hasPermission = await RBACService.hasPermission(userId, resource, action);
-
-    res.json({ 
-      success: true, 
-      hasPermission,
-      userId,
-      permission
-    });
+    const hasPerm = await RBACService.hasPermission(userId, resource, action, resourceId);
+    res.json({ success: true, hasPermission: hasPerm });
   } catch (error) {
-    console.error('Error checking permission:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to check permission' 
-    });
+    next(error);
   }
 };
 
 /**
  * Get permissions for a specific role
  */
-export const getRolePermissions: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+export const getRolePermissions = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { roleId } = req.params;
     const permissions = await RBACService.getEffectivePermissions(roleId);
@@ -404,10 +350,6 @@ export const getRolePermissions: RequestHandler = async (req: Request, res: Resp
       permissions
     });
   } catch (error) {
-    console.error('Error fetching role permissions:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch role permissions' 
-    });
+    next(error);
   }
 }; 

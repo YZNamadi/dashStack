@@ -1,13 +1,14 @@
 import { Router } from 'express';
-import { createPage, getPage, updatePage } from '../controllers/page.controller';
+import asyncHandler from 'express-async-handler';
+import { createPage, getPage, updatePage, getPageVersions, revertPageVersion } from '../controllers/page.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
 
 const router = Router({ mergeParams: true });
 
-router.use(authMiddleware);
-
-router.post('/', createPage);
-router.get('/:pageId', getPage);
-router.put('/:pageId', updatePage);
+router.post('/', authMiddleware, asyncHandler(createPage));
+router.get('/:pageId', authMiddleware, asyncHandler(getPage));
+router.put('/:pageId', authMiddleware, asyncHandler(updatePage));
+router.get('/:pageId/versions', authMiddleware, asyncHandler(getPageVersions));
+router.post('/:pageId/versions/:versionId/revert', authMiddleware, asyncHandler(revertPageVersion));
 
 export default router; 

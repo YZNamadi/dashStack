@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import prisma from '../utils/prisma';
@@ -8,15 +8,15 @@ import { AuditService } from '../services/audit.service';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
-export const register = async (req: Request, res: Response): Promise<void> => {
-    const { email, password, name } = req.body;
-
-    if (!email || !password) {
-        res.status(400).json({ message: 'Email and password are required' });
-        return;
-    }
-
+export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+        const { email, password, name } = req.body;
+
+        if (!email || !password) {
+            res.status(400).json({ message: 'Email and password are required' });
+            return;
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
         const user = await prisma.user.create({
             data: {
@@ -50,21 +50,20 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         if (error.code === 'P2002' && error.meta?.target?.includes('email')) {
             res.status(409).json({ message: 'Email already exists' });
         } else {
-            console.error('Registration error:', error);
-            res.status(500).json({ message: 'Error creating user', error });
+            next(error);
         }
     }
 };
 
-export const login = async (req: Request, res: Response): Promise<void> => {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-        res.status(400).json({ message: 'Email and password are required' });
-        return;
-    }
-
+export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            res.status(400).json({ message: 'Email and password are required' });
+            return;
+        }
+
         const user = await prisma.user.findUnique({
             where: { email },
             include: {
@@ -137,80 +136,49 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             },
         });
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ message: 'Error logging in', error });
+        next(error);
     }
 };
 
-export const getMe = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const userId = req.user?.userId;
-
-    if (!userId) {
-        res.status(401).json({ message: 'Not authenticated' });
-        return;
-    }
-
+export const getMe = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
+        const user = (req as AuthenticatedRequest).user;
+        if (!user) {
+            res.status(401).json({ message: 'Not authenticated' });
+            return;
+        }
+
+        const dbUser = await prisma.user.findUnique({
+            where: { id: user.userId },
             include: {
                 userRoles: {
                     include: {
-                        role: {
-                            include: {
-                                permissions: {
-                                    include: {
-                                        permission: true,
-                                    },
-                                },
-                            },
-                        },
+                        role: true,
                     },
                 },
             },
         });
 
-        if (!user) {
+        if (!dbUser) {
             res.status(404).json({ message: 'User not found' });
             return;
         }
 
-        // Get effective permissions for all user roles
-        const allPermissions = new Set<string>();
-        for (const userRole of user.userRoles || []) {
-            const rolePermissions = await RBACService.getEffectivePermissions(userRole.role.id);
-            rolePermissions.forEach((perm: any) => {
-                allPermissions.add(`${perm.resource}:${perm.action}`);
-            });
-        }
-
-        const userData = {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            isActive: user.isActive,
-            createdAt: user.createdAt,
-            roles: (user.userRoles || []).map((ur: any) => ({
-                id: ur.role.id,
-                name: ur.role.name,
-                description: ur.role.description,
-            })),
-            permissions: Array.from(allPermissions),
-        };
-
-        res.json(userData);
+        // Remove sensitive information
+        const { password, ...userWithoutPassword } = dbUser;
+        res.json(userWithoutPassword);
     } catch (error) {
-        console.error('Error fetching user:', error);
-        res.status(500).json({ message: 'Error fetching user', error });
+        next(error);
     }
 };
 
-export const logout = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const logout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+        const user = (req as AuthenticatedRequest).user;
         // Log logout event
         await AuditService.logAuthEvent({
-            userId: req.user?.userId,
-            userName: req.user?.name ?? undefined,
+            userId: user?.userId,
+            userName: user?.name ?? undefined,
             action: 'logout',
             success: true,
             ipAddress: req.ip,
@@ -219,7 +187,6 @@ export const logout = async (req: AuthenticatedRequest, res: Response): Promise<
 
         res.json({ message: 'Logged out successfully' });
     } catch (error) {
-        console.error('Logout error:', error);
-        res.status(500).json({ message: 'Error logging out', error });
+        next(error);
     }
 }; 

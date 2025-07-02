@@ -133,6 +133,14 @@ const defaultRoles: Role[] = [
   },
 ];
 
+// Add a list of example resources for demonstration
+const exampleResources = [
+  { id: '', name: 'Global (all resources)' },
+  { id: 'integration_1', name: 'Integration 1' },
+  { id: 'page_1', name: 'Page 1' },
+  { id: 'workflow_1', name: 'Workflow 1' },
+];
+
 export const RBACManager: React.FC<RBACManagerProps> = ({
   initialRoles = defaultRoles,
   initialUsers = [],
@@ -143,6 +151,7 @@ export const RBACManager: React.FC<RBACManagerProps> = ({
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'roles' | 'users' | 'permissions'>('roles');
+  const [selectedResourceId, setSelectedResourceId] = useState<string>('');
 
   const addRole = () => {
     const newRole: Role = {
@@ -217,6 +226,30 @@ export const RBACManager: React.FC<RBACManagerProps> = ({
       const role = roles.find(r => r.id === roleId);
       return role ? getEffectivePermissions(role).includes(permission) : false;
     });
+  };
+
+  // Modified add role to user logic to support resourceId
+  const assignRoleToUser = (userId: string, roleId: string, resourceId?: string) => {
+    setUsers(users.map(user => {
+      if (user.id !== userId) return user;
+      // Store roles as roleId:resourceId for demonstration
+      const roleKey = resourceId ? `${roleId}:${resourceId}` : roleId;
+      return {
+        ...user,
+        roles: [...user.roles, roleKey],
+      };
+    }));
+  };
+
+  const removeRoleFromUser = (userId: string, roleId: string, resourceId?: string) => {
+    setUsers(users.map(user => {
+      if (user.id !== userId) return user;
+      const roleKey = resourceId ? `${roleId}:${resourceId}` : roleId;
+      return {
+        ...user,
+        roles: user.roles.filter(r => r !== roleKey),
+      };
+    }));
   };
 
   const renderRoleEditor = () => (
@@ -481,6 +514,30 @@ export const RBACManager: React.FC<RBACManagerProps> = ({
                   ))}
                 </div>
               </div>
+
+              <div className="mb-4">
+                <Label className="block mb-1">Resource</Label>
+                <select
+                  value={selectedResourceId}
+                  onChange={e => setSelectedResourceId(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                >
+                  {exampleResources.map(res => (
+                    <option key={res.id} value={res.id}>{res.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <Button
+                onClick={() => {
+                  if (selectedUser && selectedRole) {
+                    assignRoleToUser(selectedUser.id, selectedRole.id, selectedResourceId || undefined);
+                  }
+                }}
+                className="mt-2"
+              >
+                Assign Role to User (Resource-level)
+              </Button>
             </CardContent>
           </Card>
         </div>

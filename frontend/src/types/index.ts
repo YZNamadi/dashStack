@@ -2,6 +2,8 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  roles?: Role[];
+  permissions?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -49,6 +51,7 @@ export interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  setToken: (token: string) => void;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -70,7 +73,7 @@ export interface AppState {
   fetchDatasources: (projectId: string) => Promise<void>;
   fetchWorkflows: (projectId: string) => Promise<void>;
   createPage: (projectId: string, data: { title: string; layout: any }) => Promise<void>;
-  updatePage: (id: string, data: { title: string; content?: string }) => Promise<void>;
+  updatePage: (id: string, data: { title?: string; content?: string; layout?: any }) => Promise<void>;
   deletePage: (id: string) => Promise<void>;
   createDatasource: (projectId: string, data: { name: string; type: string; config: any }) => Promise<void>;
   updateDatasource: (id: string, data: { name: string; type: string; config: any }) => Promise<void>;
@@ -87,4 +90,40 @@ export interface AppState {
   deleteRole: (roleId: string) => Promise<void>;
   assignRoleToUser: (data: { userId: string; roleId: string }) => Promise<void>;
   removeRoleFromUser: (data: { userId: string; roleId: string }) => Promise<void>;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  description?: string;
+  permissions?: string[];
+  parentRoleId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Permission {
+  id: string;
+  name: string;
+  description?: string;
+  resource: string;
+  action: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userName: string;
+  action: string;
+  resource: string;
+  resourceId?: string;
+  details: any;
+  ipAddress?: string;
+  userAgent?: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'success' | 'failure' | 'pending';
+  createdAt: string;
 }

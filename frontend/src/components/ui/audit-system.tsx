@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { DataTable } from './data-table';
+import { apiClient } from '../../lib/api';
 
 interface AuditEvent {
   id: string;
@@ -189,14 +190,40 @@ const resourceIcons = {
 };
 
 export const AuditSystem: React.FC<AuditSystemProps> = ({
-  events = mockAuditEvents,
+  events: _events,
   onExport
 }) => {
+  const [events, setEvents] = useState<AuditEvent[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedResource, setSelectedResource] = useState<string>('all');
+  const [selectedUser, setSelectedUser] = useState<string>('');
+  const [selectedAction, setSelectedAction] = useState<string>('');
   const [dateRange, setDateRange] = useState<string>('24h');
+  const [loading, setLoading] = useState(false);
+
+  // Fetch audit logs from backend with filters
+  useEffect(() => {
+    setLoading(true);
+    const params: any = {};
+    if (selectedUser) params.userId = selectedUser;
+    if (selectedAction) params.action = selectedAction;
+    if (selectedResource !== 'all') params.resource = selectedResource;
+    if (selectedSeverity !== 'all') params.severity = selectedSeverity;
+    if (selectedStatus !== 'all') params.status = selectedStatus;
+    // Date range logic (simple example)
+    if (dateRange !== 'all') {
+      const now = new Date();
+      let startDate;
+      if (dateRange === '24h') startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      if (dateRange === '7d') startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (startDate) params.startDate = startDate.toISOString();
+    }
+    apiClient.getAuditEvents(params)
+      .then(setEvents)
+      .finally(() => setLoading(false));
+  }, [selectedUser, selectedAction, selectedResource, selectedSeverity, selectedStatus, dateRange]);
 
   const filteredEvents = useMemo(() => {
     return events.filter(event => {
@@ -310,33 +337,24 @@ export const AuditSystem: React.FC<AuditSystemProps> = ({
     },
   ];
 
-  const exportAuditLog = () => {
-    if (onExport) {
-      onExport(filteredEvents);
-    } else {
-      // Default CSV export
-      const csvContent = [
-        ['Timestamp', 'User', 'Action', 'Resource', 'Severity', 'Status', 'IP Address', 'Details'].join(','),
-        ...filteredEvents.map(event => [
-          event.timestamp.toISOString(),
-          event.userName,
-          event.action,
-          event.resource,
-          event.severity,
-          event.status,
-          event.ipAddress,
-          JSON.stringify(event.details)
-        ].join(','))
-      ].join('\n');
-      
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `audit-log-${new Date().toISOString().split('T')[0]}.csv`;
-      a.click();
-      window.URL.revokeObjectURL(url);
+  // Export logic
+  const exportAuditLog = async (format: 'csv' | 'json') => {
+    const params: any = {};
+    if (selectedUser) params.userId = selectedUser;
+    if (selectedAction) params.action = selectedAction;
+    if (selectedResource !== 'all') params.resource = selectedResource;
+    if (selectedSeverity !== 'all') params.severity = selectedSeverity;
+    if (selectedStatus !== 'all') params.status = selectedStatus;
+    if (dateRange !== 'all') {
+      const now = new Date();
+      let startDate;
+      if (dateRange === '24h') startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      if (dateRange === '7d') startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (startDate) params.startDate = startDate.toISOString();
     }
+    params.format = format;
+    const query = new URLSearchParams(params).toString();
+    window.open(`/api/audit/export?${query}`, '_blank');
   };
 
   return (
@@ -346,10 +364,51 @@ export const AuditSystem: React.FC<AuditSystemProps> = ({
           <h2 className="text-2xl font-bold">Audit System</h2>
           <p className="text-gray-600">Monitor user activities and system events</p>
         </div>
-        <Button onClick={exportAuditLog}>
-          <Download className="w-4 h-4 mr-2" />
-          Export Log
-        </Button>
+        <div className="flex flex-wrap gap-4 mb-4 items-end">
+          <Input placeholder="Search user..." value={selectedUser} onChange={e => setSelectedUser(e.target.value)} className="w-40" />
+          <Input placeholder="Action..." value={selectedAction} onChange={e => setSelectedAction(e.target.value)} className="w-32" />
+          <Select value={selectedResource} onValueChange={setSelectedResource}>
+            <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Resources</SelectItem>
+              <SelectItem value="auth">Auth</SelectItem>
+              <SelectItem value="project">Project</SelectItem>
+              <SelectItem value="workflow">Workflow</SelectItem>
+              <SelectItem value="datasource">Datasource</SelectItem>
+              <SelectItem value="user">User</SelectItem>
+              <SelectItem value="data">Data</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={selectedSeverity} onValueChange={setSelectedSeverity}>
+            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Severities</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="critical">Critical</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="success">Success</SelectItem>
+              <SelectItem value="failure">Failure</SelectItem>
+              <SelectItem value="warning">Warning</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={dateRange} onValueChange={setDateRange}>
+            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Time</SelectItem>
+              <SelectItem value="24h">Last 24h</SelectItem>
+              <SelectItem value="7d">Last 7d</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={() => exportAuditLog('csv')}><Download className="w-4 h-4 mr-1" />Export CSV</Button>
+          <Button variant="outline" onClick={() => exportAuditLog('json')}><Download className="w-4 h-4 mr-1" />Export JSON</Button>
+        </div>
       </div>
 
       {/* Statistics Cards */}
@@ -406,94 +465,6 @@ export const AuditSystem: React.FC<AuditSystemProps> = ({
           </CardContent>
         </Card>
       </div>
-
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div>
-              <Label>Search</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search events..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label>Severity</Label>
-              <Select value={selectedSeverity} onValueChange={setSelectedSeverity}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Severities</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Status</Label>
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="success">Success</SelectItem>
-                  <SelectItem value="failure">Failure</SelectItem>
-                  <SelectItem value="warning">Warning</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Resource</Label>
-              <Select value={selectedResource} onValueChange={setSelectedResource}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Resources</SelectItem>
-                  <SelectItem value="auth">Authentication</SelectItem>
-                  <SelectItem value="project">Projects</SelectItem>
-                  <SelectItem value="workflow">Workflows</SelectItem>
-                  <SelectItem value="datasource">Datasources</SelectItem>
-                  <SelectItem value="user">Users</SelectItem>
-                  <SelectItem value="data">Data</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Time Range</Label>
-              <Select value={dateRange} onValueChange={setDateRange}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1h">Last Hour</SelectItem>
-                  <SelectItem value="24h">Last 24 Hours</SelectItem>
-                  <SelectItem value="7d">Last 7 Days</SelectItem>
-                  <SelectItem value="30d">Last 30 Days</SelectItem>
-                  <SelectItem value="all">All Time</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Audit Log Table */}
       <DataTable

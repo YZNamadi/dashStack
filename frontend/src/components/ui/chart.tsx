@@ -1,5 +1,19 @@
-import * as React from "react"
-import * as RechartsPrimitive from "recharts"
+import React from 'react';
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts';
 
 import { cn } from "@/lib/utils"
 
@@ -37,7 +51,7 @@ const ChartContainer = React.forwardRef<
   React.ComponentProps<"div"> & {
     config: ChartConfig
     children: React.ComponentProps<
-      typeof RechartsPrimitive.ResponsiveContainer
+      typeof ResponsiveContainer
     >["children"]
   }
 >(({ id, className, children, config, ...props }, ref) => {
@@ -56,9 +70,9 @@ const ChartContainer = React.forwardRef<
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer>
+        <ResponsiveContainer>
           {children}
-        </RechartsPrimitive.ResponsiveContainer>
+        </ResponsiveContainer>
       </div>
     </ChartContext.Provider>
   )
@@ -98,11 +112,11 @@ ${colorConfig
   )
 }
 
-const ChartTooltip = RechartsPrimitive.Tooltip
+const ChartTooltip = Tooltip
 
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+  React.ComponentProps<typeof Tooltip> &
     React.ComponentProps<"div"> & {
       hideLabel?: boolean
       hideIndicator?: boolean
@@ -254,12 +268,12 @@ const ChartTooltipContent = React.forwardRef<
 )
 ChartTooltipContent.displayName = "ChartTooltip"
 
-const ChartLegend = RechartsPrimitive.Legend
+const ChartLegend = Legend
 
 const ChartLegendContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> &
-    Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
+    Pick<LegendProps, "payload" | "verticalAlign"> & {
       hideIcon?: boolean
       nameKey?: string
     }
@@ -353,11 +367,109 @@ function getPayloadConfigFromPayload(
     : config[key as keyof typeof config]
 }
 
-export {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
-  ChartStyle,
+interface ChartProps {
+  type: 'bar' | 'line' | 'pie';
+  data: any[];
+  width?: number;
+  height?: number;
+  title?: string;
+  xAxisKey?: string;
+  yAxisKey?: string;
+  dataKey?: string;
+  colors?: string[];
 }
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
+
+export const Chart: React.FC<ChartProps> = ({
+  type,
+  data,
+  width = 400,
+  height = 300,
+  title,
+  xAxisKey = 'name',
+  yAxisKey = 'value',
+  dataKey = 'value',
+  colors = COLORS
+}) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full border border-dashed border-slate-300 rounded-lg">
+        <div className="text-center text-slate-500">
+          <div className="text-lg font-medium">No Data</div>
+          <div className="text-sm">Chart data is not available</div>
+        </div>
+      </div>
+    );
+  }
+
+  const renderChart = () => {
+    switch (type) {
+      case 'bar':
+        return (
+          <ResponsiveContainer width="100%" height={height}>
+            <BarChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey={xAxisKey} />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey={dataKey} fill={colors[0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        );
+
+      case 'line':
+        return (
+          <ResponsiveContainer width="100%" height={height}>
+            <LineChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey={xAxisKey} />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey={dataKey} stroke={colors[0]} strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        );
+
+      case 'pie':
+        return (
+          <ResponsiveContainer width="100%" height={height}>
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey={dataKey}
+              >
+                {data.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="w-full">
+      {title && (
+        <div className="text-center font-medium text-slate-800 mb-2">{title}</div>
+      )}
+      {renderChart()}
+    </div>
+  );
+};
+
+export default Chart;

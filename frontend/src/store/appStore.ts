@@ -142,17 +142,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  updatePage: async (id: string, data: { title: string; content?: string }) => {
+  updatePage: async (id: string, data: { title?: string; content?: string; layout?: any }) => {
     try {
       const currentProject = get().currentProject;
       if (!currentProject) throw new Error('No project selected');
-      const updatedPage = await apiClient.updatePage(currentProject.id, id, { name: data.title, content: data.content });
+      const updatedPage = await apiClient.updatePage(currentProject.id, id, { 
+        name: data.title, 
+        content: data.content,
+        layout: data.layout 
+      });
       set((state) => ({
         pages: state.pages.map((p) => (p.id === id ? updatedPage : p)),
       }));
       toast({
         title: 'Page updated',
-        description: `${data.title} has been updated successfully.`,
+        description: `Page has been updated successfully.`,
       });
     } catch (error) {
       toast({

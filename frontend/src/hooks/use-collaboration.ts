@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { io, Socket } from 'socket.io-client';
+
+// Types for event payloads (should match backend)
+export type PageUpdatePayload = { pageId: string; components: any[]; userId: string };
+export type CursorMovePayload = { pageId: string; userId: string; x: number; y: number };
+export type CommentAddPayload = { pageId: string; userId: string; comment: string; timestamp: number };
 
 interface User {
   id: string;
@@ -15,258 +21,101 @@ interface Presence {
   lastSeen: Date;
 }
 
-interface CollaborationMessage {
-  type: 'presence' | 'edit' | 'cursor' | 'comment' | 'sync';
-  userId: string;
-  data: any;
-  timestamp: number;
-}
-
 interface UseCollaborationProps {
   roomId: string;
   currentUser: User;
-  onEdit?: (data: any) => void;
-  onComment?: (comment: any) => void;
+  jwt: string;
+  onPageUpdate?: (data: PageUpdatePayload) => void;
+  onCursorMove?: (data: CursorMovePayload) => void;
+  onCommentAdd?: (data: CommentAddPayload) => void;
 }
 
 export const useCollaboration = ({
   roomId,
   currentUser,
-  onEdit,
-  onComment
+  jwt,
+  onPageUpdate,
+  onCursorMove,
+  onCommentAdd
 }: UseCollaborationProps) => {
   const [isConnected, setIsConnected] = useState(false);
-  const [users, setUsers] = useState<User[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
-  const [comments, setComments] = useState<any[]>([]);
-  const [conflicts, setConflicts] = useState<any[]>([]);
-  
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout>();
+  const [comments, setComments] = useState<CommentAddPayload[]>([]);
+  const socketRef = useRef<Socket | null>(null);
 
-  // Generate a unique color for the user
-  const generateUserColor = useCallback(() => {
-    const colors = [
-      '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
-      '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1'
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  }, []);
+  useEffect(() => {
+    const socket = io('/collaboration', {
+      auth: { token: jwt },
+      transports: ['websocket'],
+      autoConnect: true
+    });
+    socketRef.current = socket;
 
-  // Initialize WebSocket connection
-  const connect = useCallback(() => {
-    try {
-      // In a real app, you'd connect to your WebSocket server
-      // For now, we'll simulate the connection
+    socket.on('connect', () => {
       setIsConnected(true);
-      
-      // Simulate other users joining
-      const mockUsers: User[] = [
-        {
-          id: 'user1',
-          name: 'Alice Johnson',
-          email: 'alice@example.com',
-          color: '#3B82F6'
-        },
-        {
-          id: 'user2',
-          name: 'Bob Smith',
-          email: 'bob@example.com',
-          color: '#EF4444'
-        }
-      ];
-      
-      setUsers([currentUser, ...mockUsers]);
-      
-      // Simulate presence updates
-      const mockPresence: Presence[] = mockUsers.map(user => ({
-        user,
-        position: { x: Math.random() * 800, y: Math.random() * 600 },
-        lastSeen: new Date()
-      }));
-      
-      setPresence(mockPresence);
-      
-      // Start heartbeat
-      heartbeatIntervalRef.current = setInterval(() => {
-        sendMessage({
-          type: 'presence',
-          userId: currentUser.id,
-          data: {
-            position: { x: Math.random() * 800, y: Math.random() * 600 },
-            lastSeen: new Date()
-          },
-          timestamp: Date.now()
-        });
-      }, 30000);
-      
-    } catch (error) {
-      console.error('Failed to connect:', error);
+      socket.emit('join_page', roomId);
+    });
+    socket.on('disconnect', () => {
       setIsConnected(false);
-    }
-  }, [currentUser]);
-
-  // Send message to other users
-  const sendMessage = useCallback((message: CollaborationMessage) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    }
-    
-    // Simulate message handling
-    handleMessage(message);
-  }, []);
-
-  // Handle incoming messages
-  const handleMessage = useCallback((message: CollaborationMessage) => {
-    switch (message.type) {
-      case 'presence':
-        setPresence(prev => {
-          const existing = prev.find(p => p.user.id === message.userId);
-          if (existing) {
-            return prev.map(p => 
-              p.user.id === message.userId 
-                ? { ...p, ...message.data, lastSeen: new Date() }
-                : p
-            );
-          } else {
-            const user = users.find(u => u.id === message.userId);
-            if (user) {
-              return [...prev, { user, ...message.data, lastSeen: new Date() }];
-            }
-            return prev;
-          }
-        });
-        break;
-        
-      case 'edit':
-        onEdit?.(message.data);
-        break;
-        
-      case 'cursor':
-        setPresence(prev => 
-          prev.map(p => 
-            p.user.id === message.userId 
-              ? { ...p, selection: message.data.selection }
-              : p
-          )
-        );
-        break;
-        
-      case 'comment':
-        setComments(prev => [...prev, message.data]);
-        onComment?.(message.data);
-        break;
-        
-      case 'sync':
-        // Handle synchronization
-        break;
-    }
-  }, [users, onEdit, onComment]);
-
-  // Send edit operation
-  const sendEdit = useCallback((data: any) => {
-    sendMessage({
-      type: 'edit',
-      userId: currentUser.id,
-      data,
-      timestamp: Date.now()
     });
-  }, [currentUser.id, sendMessage]);
 
-  // Send cursor position
-  const sendCursor = useCallback((selection: { start: number; end: number }) => {
-    sendMessage({
-      type: 'cursor',
-      userId: currentUser.id,
-      data: { selection },
-      timestamp: Date.now()
+    // Listen for events
+    socket.on('page_update', (data: PageUpdatePayload) => {
+      onPageUpdate?.(data);
     });
-  }, [currentUser.id, sendMessage]);
-
-  // Add comment
-  const addComment = useCallback((comment: { text: string; position: { x: number; y: number } }) => {
-    const newComment = {
-      id: `comment_${Date.now()}`,
-      text: comment.text,
-      position: comment.position,
-      user: currentUser,
-      timestamp: new Date(),
-      replies: []
-    };
-    
-    sendMessage({
-      type: 'comment',
-      userId: currentUser.id,
-      data: newComment,
-      timestamp: Date.now()
+    socket.on('cursor_move', (data: CursorMovePayload) => {
+      onCursorMove?.(data);
     });
-  }, [currentUser, sendMessage]);
-
-  // Resolve conflict
-  const resolveConflict = useCallback((conflictId: string, resolution: any) => {
-    setConflicts(prev => prev.filter(c => c.id !== conflictId));
-    
-    sendMessage({
-      type: 'sync',
-      userId: currentUser.id,
-      data: { conflictId, resolution },
-      timestamp: Date.now()
+    socket.on('comment_add', (data: CommentAddPayload) => {
+      setComments(prev => [...prev, data]);
+      onCommentAdd?.(data);
     });
-  }, [currentUser.id, sendMessage]);
 
-  // Disconnect
-  const disconnect = useCallback(() => {
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current);
-    }
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-    setIsConnected(false);
-  }, []);
-
-  // Auto-reconnect
-  const reconnect = useCallback(() => {
-    disconnect();
-    reconnectTimeoutRef.current = setTimeout(() => {
-      connect();
-    }, 1000);
-  }, [connect, disconnect]);
-
-  // Initialize connection
-  useEffect(() => {
-    connect();
-    
+    // Clean up on unmount
     return () => {
-      disconnect();
+      socket.emit('leave_page', roomId);
+      socket.disconnect();
     };
-  }, [connect, disconnect]);
+  }, [roomId, jwt, onPageUpdate, onCursorMove, onCommentAdd]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      disconnect();
-    };
-  }, [disconnect]);
+  // Emit events
+  const sendPageUpdate = useCallback((components: any[]) => {
+    socketRef.current?.emit('page_update', {
+      pageId: roomId,
+      components,
+      userId: currentUser.id
+    } as PageUpdatePayload);
+  }, [roomId, currentUser.id]);
+
+  // Debounce/throttle cursor move
+  const cursorMoveTimeout = useRef<NodeJS.Timeout | null>(null);
+  const sendCursorMove = useCallback((x: number, y: number) => {
+    if (cursorMoveTimeout.current) clearTimeout(cursorMoveTimeout.current);
+    cursorMoveTimeout.current = setTimeout(() => {
+      socketRef.current?.emit('cursor_move', {
+        pageId: roomId,
+        userId: currentUser.id,
+        x,
+        y
+      } as CursorMovePayload);
+    }, 50); // 20fps max
+  }, [roomId, currentUser.id]);
+
+  const sendComment = useCallback((comment: string) => {
+    socketRef.current?.emit('comment_add', {
+      pageId: roomId,
+      userId: currentUser.id,
+      comment,
+      timestamp: Date.now()
+    } as CommentAddPayload);
+  }, [roomId, currentUser.id]);
 
   return {
-    // State
     isConnected,
-    users,
     presence,
     comments,
-    conflicts,
-    
-    // Actions
-    sendEdit,
-    sendCursor,
-    addComment,
-    resolveConflict,
-    reconnect,
-    disconnect
+    sendPageUpdate,
+    sendCursorMove,
+    sendComment
   };
 }; 

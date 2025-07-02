@@ -8,8 +8,14 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      token: null,
-      isAuthenticated: false,
+      token: localStorage.getItem('dashstack_token'),
+      isAuthenticated: !!localStorage.getItem('dashstack_token'),
+
+      setToken: (token: string) => {
+        localStorage.setItem('dashstack_token', token);
+        set({ token, isAuthenticated: true });
+        get().checkAuth();
+      },
 
       login: async (email: string, password: string) => {
         try {

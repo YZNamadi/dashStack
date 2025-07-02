@@ -2,17 +2,22 @@ import { useAppStore } from '../store/appStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Database, Plus, Edit, Trash2, TestTube } from 'lucide-react';
+import { Database, Plus, Edit, Trash2, TestTube, Eye, Globe, Code } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { DatasourceConfigDialog } from '../components/DatasourceConfigDialog';
+import { useToast } from '../hooks/use-toast';
+import { apiClient } from '../lib/api';
 
 export const Datasources = () => {
   const { currentProject, datasources, fetchDatasources, createDatasource, updateDatasource, deleteDatasource } = useAppStore();
+  const { toast } = useToast();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editingDatasource, setEditingDatasource] = useState<any>(null);
   const [deletingDatasource, setDeletingDatasource] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [testingConnection, setTestingConnection] = useState<string | null>(null);
 
   useEffect(() => {
     const loadDatasources = async () => {
@@ -40,11 +45,90 @@ export const Datasources = () => {
   };
 
   const handleTestConnection = async (datasource: any) => {
+    setTestingConnection(datasource.id);
     try {
-      const { testDatasourceConnection } = useAppStore.getState();
-      await testDatasourceConnection(datasource.id);
-    } catch (error) {
-      console.error('Connection test failed:', error);
+      const result = await apiClient.testDatasourceConnection(currentProject.id, {
+        type: datasource.type,
+        config: datasource.config
+      });
+      
+      toast({
+        title: 'Connection Test',
+        description: result.success ? 'Connection successful!' : 'Connection failed',
+        variant: result.success ? 'default' : 'destructive'
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Connection Test Failed',
+        description: error.message,
+        variant: 'destructive'
+      });
+    } finally {
+      setTestingConnection(null);
+    }
+  };
+
+  const handleCreateDatasource = async (datasourceData: any) => {
+    try {
+      await createDatasource(currentProject.id, datasourceData);
+      setShowCreateDialog(false);
+      toast({
+        title: 'Datasource Created',
+        description: 'Datasource has been created successfully.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Creation Failed',
+        description: error.message,
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleUpdateDatasource = async (datasourceData: any) => {
+    try {
+      await updateDatasource(editingDatasource.id, datasourceData);
+      setShowEditDialog(false);
+      setEditingDatasource(null);
+      toast({
+        title: 'Datasource Updated',
+        description: 'Datasource has been updated successfully.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Update Failed',
+        description: error.message,
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const getDatasourceIcon = (type: string) => {
+    switch (type) {
+      case 'PostgreSQL':
+      case 'MySQL':
+        return <Database className="w-5 h-5" />;
+      case 'REST':
+        return <Globe className="w-5 h-5" />;
+      case 'GraphQL':
+        return <Code className="w-5 h-5" />;
+      default:
+        return <Database className="w-5 h-5" />;
+    }
+  };
+
+  const getDatasourceColor = (type: string) => {
+    switch (type) {
+      case 'PostgreSQL':
+        return 'text-blue-600';
+      case 'MySQL':
+        return 'text-orange-600';
+      case 'REST':
+        return 'text-green-600';
+      case 'GraphQL':
+        return 'text-purple-600';
+      default:
+        return 'text-slate-600';
     }
   };
 
@@ -93,7 +177,9 @@ export const Datasources = () => {
               <CardHeader>
                 <CardTitle className="flex items-center justify-between text-lg">
                   <div className="flex items-center">
-                    <Database className="w-5 h-5 mr-2 text-blue-600" />
+                    <div className={`mr-2 ${getDatasourceColor(datasource.type)}`}>
+                      {getDatasourceIcon(datasource.type)}
+                    </div>
                     {datasource.name}
                   </div>
                   <Badge variant="outline" className="text-xs">
@@ -101,7 +187,7 @@ export const Datasources = () => {
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  {datasource.config?.host || 'No host configured'}
+                  {datasource.config?.host || datasource.config?.baseUrl || datasource.config?.graphqlEndpoint || 'No endpoint configured'}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -114,15 +200,22 @@ export const Datasources = () => {
                       size="sm"
                       variant="outline"
                       onClick={() => handleTestConnection(datasource)}
+                      disabled={testingConnection === datasource.id}
                       className="h-8 w-8 p-0"
+                      title="Test Connection"
                     >
+                      {testingConnection === datasource.id ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      ) : (
                       <TestTube className="w-4 h-4" />
+                      )}
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => handleEdit(datasource)}
                       className="h-8 w-8 p-0"
+                      title="Edit Datasource"
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
@@ -131,6 +224,7 @@ export const Datasources = () => {
                       variant="outline"
                       onClick={() => handleDelete(datasource)}
                       className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                      title="Delete Datasource"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -157,144 +251,25 @@ export const Datasources = () => {
         </div>
       )}
 
-      {/* Datasource Create Dialog */}
-      {showCreateDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Create New Datasource</h2>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target as HTMLFormElement;
-                const formData = new FormData(form);
-                const name = formData.get('name') as string;
-                const type = formData.get('type') as string;
-                const host = formData.get('host') as string;
-                const port = formData.get('port') as string;
-                const database = formData.get('database') as string;
-                const username = formData.get('username') as string;
-                const password = formData.get('password') as string;
-                const config = { host, port, database, username, password };
-                await createDatasource(currentProject.id, { name, type, config });
-                setShowCreateDialog(false);
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium mb-1">Name</label>
-                <input name="name" required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Type</label>
-                <select name="type" required className="w-full border rounded px-3 py-2">
-                  <option value="postgresql">PostgreSQL</option>
-                  <option value="mysql">MySQL</option>
-                  <option value="mongodb">MongoDB</option>
-                  <option value="redis">Redis</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Host</label>
-                <input name="host" required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Port</label>
-                <input name="port" required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Database</label>
-                <input name="database" required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Username</label>
-                <input name="username" required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Password</label>
-                <input name="password" type="password" required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" className="bg-blue-600 text-white">
-                  Create
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Enhanced Datasource Create Dialog */}
+      <DatasourceConfigDialog
+        isOpen={showCreateDialog}
+        onClose={() => setShowCreateDialog(false)}
+        onSubmit={handleCreateDatasource}
+        projectId={currentProject.id}
+      />
 
-      {/* Datasource Edit Dialog */}
-      {showEditDialog && editingDatasource && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Edit Datasource</h2>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.target as HTMLFormElement;
-                const formData = new FormData(form);
-                const name = formData.get('name') as string;
-                const type = formData.get('type') as string;
-                const host = formData.get('host') as string;
-                const port = formData.get('port') as string;
-                const database = formData.get('database') as string;
-                const username = formData.get('username') as string;
-                const password = formData.get('password') as string;
-                const config = { host, port, database, username, password };
-                await updateDatasource(editingDatasource.id, { name, type, config });
+      {/* Enhanced Datasource Edit Dialog */}
+      <DatasourceConfigDialog
+        isOpen={showEditDialog}
+        onClose={() => {
                 setShowEditDialog(false);
                 setEditingDatasource(null);
               }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium mb-1">Name</label>
-                <input name="name" defaultValue={editingDatasource.name} required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Type</label>
-                <select name="type" defaultValue={editingDatasource.type} required className="w-full border rounded px-3 py-2">
-                  <option value="postgresql">PostgreSQL</option>
-                  <option value="mysql">MySQL</option>
-                  <option value="mongodb">MongoDB</option>
-                  <option value="redis">Redis</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Host</label>
-                <input name="host" defaultValue={editingDatasource.config?.host} required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Port</label>
-                <input name="port" defaultValue={editingDatasource.config?.port} required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Database</label>
-                <input name="database" defaultValue={editingDatasource.config?.database} required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Username</label>
-                <input name="username" defaultValue={editingDatasource.config?.username} required className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Password</label>
-                <input name="password" type="password" placeholder="Enter new password" className="w-full border rounded px-3 py-2" />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => { setShowEditDialog(false); setEditingDatasource(null); }}>
-                  Cancel
-                </Button>
-                <Button type="submit" className="bg-blue-600 text-white">
-                  Update
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+        onSubmit={handleUpdateDatasource}
+        editingDatasource={editingDatasource}
+        projectId={currentProject.id}
+      />
 
       {/* Delete Confirmation Dialog */}
       {showDeleteDialog && deletingDatasource && (
@@ -314,9 +289,21 @@ export const Datasources = () => {
               <Button 
                 className="bg-red-600 text-white hover:bg-red-700"
                 onClick={async () => {
+                  try {
                   await deleteDatasource(deletingDatasource.id);
                   setShowDeleteDialog(false);
                   setDeletingDatasource(null);
+                    toast({
+                      title: 'Datasource Deleted',
+                      description: 'Datasource has been deleted successfully.',
+                    });
+                  } catch (error: any) {
+                    toast({
+                      title: 'Deletion Failed',
+                      description: error.message,
+                      variant: 'destructive'
+                    });
+                  }
                 }}
               >
                 Delete

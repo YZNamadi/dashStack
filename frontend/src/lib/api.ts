@@ -190,6 +190,15 @@ class APIClient {
       body: JSON.stringify(query),
     });
   }
+  testDatasourceConnection(projectId: string, data: { type: string; config: any }) {
+    return this.request<any>(`/projects/${projectId}/datasources/test-connection`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  getDatasourceSchema(projectId: string, datasourceId: string) {
+    return this.request<any>(`/projects/${projectId}/datasources/${datasourceId}/schema`);
+  }
 
   // --- Workflows ---
   getWorkflows(projectId: string) {
@@ -248,13 +257,13 @@ class APIClient {
   deleteRole(roleId: string) {
     return this.request<void>(`/rbac/roles/${roleId}`, { method: 'DELETE' });
   }
-  assignRoleToUser(data: AssignRoleRequest) {
+  assignRoleToUser(data: { userId: string; roleId: string; resourceId?: string }) {
     return this.request<void>(`/rbac/assign-role`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
-  removeRoleFromUser(data: RemoveRoleRequest) {
+  removeRoleFromUser(data: { userId: string; roleId: string; resourceId?: string }) {
     return this.request<void>(`/rbac/remove-role`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -263,7 +272,7 @@ class APIClient {
   getUserRoles(userId: string) {
     return this.request<{ user: User; roles: Role[]; permissions: string[] }>(`/rbac/user/${userId}`);
   }
-  checkPermission(data: CheckPermissionRequest) {
+  checkPermission(data: { userId: string; permission: string; resourceId?: string }) {
     return this.request<{ hasPermission: boolean }>(`/rbac/check-permission`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -273,17 +282,50 @@ class APIClient {
   // --- Audit ---
   getAuditEvents(params: Record<string, any> = {}) {
     const query = new URLSearchParams(params).toString();
-    return this.request<AuditEvent[]>(`/audit${query ? `?${query}` : ''}`);
+    return this.request<{ events: AuditEvent[]; total: number }>(`/audit/events?${query}`);
   }
   getAuditStats(params: Record<string, any> = {}) {
     const query = new URLSearchParams(params).toString();
     return this.request<any>(`/audit/stats${query ? `?${query}` : ''}`);
   }
-  exportAuditEvents(params: Record<string, any> = {}) {
+  async exportAuditEvents(params: Record<string, any> = {}): Promise<Blob> {
     const query = new URLSearchParams(params).toString();
-    return fetch(`${API_BASE_URL}/audit/export${query ? `?${query}` : ''}`, {
-      headers: this.getAuthHeaders(),
-    }).then(res => res.text());
+    const url = `${API_BASE_URL}/audit/export?${query}`;
+    const config: RequestInit = {
+      method: 'GET',
+      headers: {
+        ...this.getAuthHeaders(),
+      },
+    };
+    const response = await fetch(url, config);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Request failed' }));
+      throw new Error(error.message || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  }
+
+  // --- Integrations ---
+  getIntegrations(projectId: string) {
+    return this.request<any[]>(`/projects/${projectId}/integrations`);
+  }
+  createIntegration(projectId: string, data: { name: string; type: string; config: any }) {
+    return this.request<any>(`/projects/${projectId}/integrations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  updateIntegration(projectId: string, integrationId: string, data: { name?: string; type?: string; config?: any; status?: string }) {
+    return this.request<any>(`/projects/${projectId}/integrations/${integrationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  deleteIntegration(projectId: string, integrationId: string) {
+    return this.request<void>(`/projects/${projectId}/integrations/${integrationId}`, { method: 'DELETE' });
+  }
+  testIntegration(projectId: string, integrationId: string) {
+    return this.request<any>(`/projects/${projectId}/integrations/${integrationId}/test`, { method: 'POST' });
   }
 }
 

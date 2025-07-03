@@ -4,11 +4,11 @@ import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 export const createProject = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name } = req.body;
+    const { name, organizationId } = req.body;
     const ownerId = (req as AuthenticatedRequest).user?.userId;
 
-    if (!name || !ownerId) {
-      res.status(400).json({ message: 'Name and owner ID are required' });
+    if (!name || !ownerId || !organizationId) {
+      res.status(400).json({ message: 'Name, owner ID, and organization ID are required' });
       return;
     }
 
@@ -16,6 +16,7 @@ export const createProject = async (req: Request, res: Response, next: NextFunct
       data: {
         name,
         ownerId,
+        organizationId,
       },
     });
     res.status(201).json(project);

@@ -85,6 +85,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
                 details: { reason: 'User not found' },
             });
 
+            if ((req as any).incrementLoginAttempt) (req as any).incrementLoginAttempt();
             res.status(404).json({ message: 'User not found' });
             return;
         }
@@ -103,6 +104,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
                 details: { reason: 'Invalid password' },
             });
 
+            if ((req as any).incrementLoginAttempt) (req as any).incrementLoginAttempt();
             res.status(401).json({ message: 'Invalid credentials' });
             return;
         }

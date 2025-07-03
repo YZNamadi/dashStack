@@ -62,4 +62,31 @@ export const rbacMiddleware = (permissions: string[]): RequestHandler => {
             next(error);
         }
     };
+};
+
+// In-memory brute-force protection for login (upgrade to Redis for production)
+const loginAttempts: Record<string, { count: number; lastAttempt: number }> = {};
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+export const bruteForceLoginMiddleware = (req: Request, res: Response, next: NextFunction): void => {
+  const ip = String(req.ip || (req.connection && (req.connection as any).remoteAddress) || 'unknown');
+  const now = Date.now();
+  if (!loginAttempts[ip]) {
+    loginAttempts[ip] = { count: 0, lastAttempt: now };
+  }
+  const attempt = loginAttempts[ip];
+  // Reset count if window has passed
+  if (now - attempt.lastAttempt > WINDOW_MS) {
+    attempt.count = 0;
+    attempt.lastAttempt = now;
+  }
+  attempt.lastAttempt = now;
+  if (attempt.count >= MAX_ATTEMPTS) {
+    res.status(429).json({ message: 'Too many failed login attempts. Please try again later.' });
+    return;
+  }
+  // Attach a helper to increment on failure
+  (req as any).incrementLoginAttempt = () => { attempt.count += 1; };
+  next();
 }; 

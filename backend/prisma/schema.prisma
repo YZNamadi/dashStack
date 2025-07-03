@@ -32,11 +32,16 @@ model User {
   
   // Page version relationships
   pageVersions PageVersion[]
+  
+  groupMemberships GroupMembership[]
+  workflowVersions WorkflowVersion[]
+  organizationMemberships OrganizationMembership[]
+  settings Setting[]
 }
 
 model Role {
   id          String   @id @default(uuid())
-  name        String   @unique
+  name        String   // Not unique globally, but unique per org
   description String?
   isSystem    Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -50,6 +55,14 @@ model Role {
   parentRoleId String?
   parentRole   Role?   @relation("RoleInheritance", fields: [parentRoleId], references: [id])
   childRoles   Role[]  @relation("RoleInheritance")
+  
+  groupRoles GroupRole[]
+  
+  // Org-scoping
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String?
+  
+  @@unique([name, organizationId])
 }
 
 model Permission {
@@ -76,7 +89,11 @@ model UserRole {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
   
-  @@unique([userId, roleId, resourceId])
+  // Org-scoping
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String?
+  
+  @@unique([userId, roleId, resourceId, organizationId])
   @@map("user_roles")
 }
 
@@ -121,6 +138,9 @@ model Project {
   datasources Datasource[]
   workflows   Workflow[]
   integrations Integration[]
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  settings Setting[]
 }
 
 model Page {
@@ -176,6 +196,7 @@ model Workflow {
   
   // Workflow triggers
   triggers WorkflowTrigger[]
+  workflowVersions WorkflowVersion[]
 }
 
 model WorkflowTrigger {
@@ -223,4 +244,99 @@ enum TriggerType {
 enum WorkflowType {
   Python
   JavaScript
+}
+
+model Group {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt @default(now())
+  memberships GroupMembership[]
+  groupRoles  GroupRole[]
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+}
+
+model GroupMembership {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId   String
+  joinedAt  DateTime @default(now())
+
+  @@unique([userId, groupId])
+}
+
+model GroupRole {
+  id      String @id @default(uuid())
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId String
+  role    Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId  String
+  assignedAt DateTime @default(now())
+
+  // Org-scoping
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String?
+
+  @@unique([groupId, roleId, organizationId])
+}
+
+model WorkflowVersion {
+  id          String   @id @default(uuid())
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowId  String
+  version     Int
+  content     Json
+  createdAt   DateTime @default(now())
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+
+  @@unique([workflowId, version])
+  @@map("workflow_versions")
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @default(now())
+  users       OrganizationMembership[]
+  projects    Project[]
+  groups      Group[]
+  roles       Role[]
+  userRoles   UserRole[]
+  groupRoles  GroupRole[]
+  settings Setting[]
+}
+
+model OrganizationMembership {
+  id            String   @id @default(uuid())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  role          String   // e.g., 'admin', 'member'
+  joinedAt      DateTime @default(now())
+
+  @@unique([userId, organizationId])
+}
+
+model Setting {
+  id              String   @id @default(uuid())
+  key             String
+  value           Json
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId  String?
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt @default(now())
+
+  @@unique([key, userId, organizationId, projectId])
 }

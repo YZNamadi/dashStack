@@ -53,6 +53,11 @@ export class RBACService {
     { resource: 'role', action: 'update', description: 'Edit roles' },
     { resource: 'role', action: 'delete', description: 'Delete roles' },
     
+    // Settings permissions
+    { resource: 'setting', action: 'read', description: 'Read settings' },
+    { resource: 'setting', action: 'update', description: 'Update settings' },
+    { resource: 'setting', action: 'delete', description: 'Delete settings' },
+    
     // System permissions
     { resource: 'system', action: 'admin', description: 'Full system access' },
     { resource: 'system', action: 'audit', description: 'View audit logs' },
@@ -64,7 +69,9 @@ export class RBACService {
       name: 'Administrator',
       description: 'Full system access with all permissions',
       isSystem: true,
-      permissions: RBACService.DEFAULT_PERMISSIONS.map(p => `${p.resource}:${p.action}`),
+      permissions: [
+        ...RBACService.DEFAULT_PERMISSIONS.map(p => `${p.resource}:${p.action}`),
+      ],
     },
     {
       name: 'Manager',
@@ -75,6 +82,7 @@ export class RBACService {
         'workflow:read', 'workflow:create', 'workflow:update', 'workflow:execute',
         'datasource:read', 'datasource:create', 'datasource:update',
         'user:read', 'user:create', 'user:update',
+        'setting:read', 'setting:update', 'setting:delete',
       ],
     },
     {
@@ -129,7 +137,7 @@ export class RBACService {
       // Create default roles
       for (const roleData of RBACService.DEFAULT_ROLES) {
         const role = await prisma.role.upsert({
-          where: { name: roleData.name },
+          where: { name_organizationId: { name: roleData.name, organizationId: null as any } },
           update: {},
           create: {
             name: roleData.name,
@@ -200,20 +208,49 @@ export class RBACService {
   }
 
   /**
-   * Check if user has a specific permission, optionally for a specific resource
+   * Check if user has a specific permission, optionally for a specific resource and organization
    */
-  static async hasPermission(userId: string, resource: string, action: string, resourceId?: string): Promise<boolean> {
+  static async hasPermission(userId: string, resource: string, action: string, resourceId?: string, organizationId?: string): Promise<boolean> {
     const user = await this.getUserWithRoles(userId);
     if (!user) return false;
 
     const allPermissions = new Set<string>();
 
-    // Collect all permissions from user's roles
+    // Collect all permissions from user's roles (org-scoped first, then global)
     for (const userRole of user.userRoles) {
-      // If resourceId is specified, only consider roles for that resource or global (null resourceId)
+      if (organizationId && userRole.organizationId !== organizationId) continue;
       if (resourceId && userRole.resourceId !== null && userRole.resourceId !== resourceId) continue;
       const rolePermissions = await this.getEffectivePermissions(userRole.role.id);
       rolePermissions.forEach(perm => allPermissions.add(`${perm.resource}:${perm.action}`));
+    }
+    // If no org-scoped permissions found, check global roles
+    if (allPermissions.size === 0 && organizationId) {
+      for (const userRole of user.userRoles) {
+        if (userRole.organizationId !== null) continue;
+        if (resourceId && userRole.resourceId !== null && userRole.resourceId !== resourceId) continue;
+        const rolePermissions = await this.getEffectivePermissions(userRole.role.id);
+        rolePermissions.forEach(perm => allPermissions.add(`${perm.resource}:${perm.action}`));
+      }
+    }
+
+    // Collect all permissions from group roles (org-scoped first, then global)
+    const groupMemberships = await prisma.groupMembership.findMany({ where: { userId } });
+    for (const membership of groupMemberships) {
+      const groupRoles = await prisma.groupRole.findMany({ where: { groupId: membership.groupId, organizationId } });
+      for (const groupRole of groupRoles) {
+        const rolePermissions = await this.getEffectivePermissions(groupRole.roleId);
+        rolePermissions.forEach(perm => allPermissions.add(`${perm.resource}:${perm.action}`));
+      }
+    }
+    // If no org-scoped group permissions found, check global group roles
+    if (allPermissions.size === 0 && organizationId) {
+      for (const membership of groupMemberships) {
+        const groupRoles = await prisma.groupRole.findMany({ where: { groupId: membership.groupId, organizationId: null } });
+        for (const groupRole of groupRoles) {
+          const rolePermissions = await this.getEffectivePermissions(groupRole.roleId);
+          rolePermissions.forEach(perm => allPermissions.add(`${perm.resource}:${perm.action}`));
+        }
+      }
     }
 
     return allPermissions.has(`${resource}:${action}`);
@@ -240,7 +277,7 @@ export class RBACService {
     const permissions = new Set<string>();
     
     // Add direct permissions
-    role.permissions.forEach(rp => {
+    role.permissions.forEach((rp: RolePermission & { permission: Permission }) => {
       permissions.add(`${rp.permission.resource}:${rp.permission.action}`);
     });
 
@@ -274,78 +311,69 @@ export class RBACService {
   }
 
   /**
-   * Assign a role to a user, optionally for a specific resource
+   * Assign a role to a user, optionally for a specific resource and organization
    */
-  static async assignRoleToUser(userId: string, roleId: string, resourceId?: string): Promise<void> {
+  static async assignRoleToUser(userId: string, roleId: string, resourceId?: string, organizationId?: string): Promise<void> {
     const existingUserRole = await prisma.userRole.findFirst({
       where: {
         userId,
         roleId,
         resourceId: resourceId || null,
+        organizationId: organizationId || null,
       },
     });
-
-    if (existingUserRole) {
-      // Role already assigned, no need to do anything
-      return;
-    }
-
+    if (existingUserRole) return;
     await prisma.userRole.create({
       data: {
         userId,
         roleId,
         resourceId: resourceId || null,
+        organizationId: organizationId || null,
       },
     });
   }
 
   /**
-   * Remove a role from a user, optionally for a specific resource
+   * Remove a role from a user, optionally for a specific resource and organization
    */
-  static async removeRoleFromUser(userId: string, roleId: string, resourceId?: string): Promise<void> {
+  static async removeRoleFromUser(userId: string, roleId: string, resourceId?: string, organizationId?: string): Promise<void> {
     const userRole = await prisma.userRole.findFirst({
       where: {
         userId,
         roleId,
         resourceId: resourceId || null,
+        organizationId: organizationId || null,
       },
     });
-
     if (userRole) {
-      await prisma.userRole.delete({
-        where: { id: userRole.id },
-      });
+      await prisma.userRole.delete({ where: { id: userRole.id } });
     }
   }
 
   /**
-   * Create a new role
+   * Create a new role (optionally org-scoped)
    */
   static async createRole(data: {
     name: string;
     description?: string;
     permissions?: string[];
     parentRoleId?: string;
+    organizationId?: string;
   }): Promise<Role> {
     const role = await prisma.role.create({
       data: {
         name: data.name,
         description: data.description,
         parentRoleId: data.parentRoleId,
+        organizationId: data.organizationId || null,
       },
     });
-
     if (data.permissions) {
       for (const permString of data.permissions) {
         const [resource, action] = permString.split(':');
         const permission = await prisma.permission.findFirst({
-          where: { 
-            resource,
-            action,
-            resourceId: null // Global permission
-          },
+          where: { resource, action, resourceId: null },
         });
-
         if (permission) {
           await prisma.rolePermission.create({
             data: {
@@ -356,7 +384,6 @@ export class RBACService {
         }
       }
     }
-
     return role;
   }
 

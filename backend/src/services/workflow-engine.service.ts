@@ -60,6 +60,7 @@ class WorkflowEngine {
         port: parseInt(process.env.REDIS_PORT || '6379'),
       },
     });
+    console.log('Redis connected for workflow queues');
 
     // Scheduled workflows queue
     const scheduledQueue = new Queue('scheduled-workflows', {
@@ -385,7 +386,8 @@ ${workflow.code}
     input: Record<string, unknown> | undefined,
     output: unknown,
     success: boolean,
-    error?: string
+    error?: string,
+    executionTimeMs?: number
   ): Promise<void> {
     const log = {
       timestamp: new Date().toISOString(),
@@ -393,6 +395,7 @@ ${workflow.code}
       output: output ? JSON.stringify(output) : null,
       success,
       error: error || null,
+      executionTimeMs: executionTimeMs || null,
     };
 
     await prisma.workflow.update({

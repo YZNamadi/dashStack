@@ -302,7 +302,7 @@ export class AuditService {
       byAction: {} as Record<string, number>,
     };
 
-    events.forEach(event => {
+    events.forEach((event: any) => {
       stats.bySeverity[event.severity] = (stats.bySeverity[event.severity] || 0) + 1;
       stats.byStatus[event.status] = (stats.byStatus[event.status] || 0) + 1;
       stats.byResource[event.resource] = (stats.byResource[event.resource] || 0) + 1;

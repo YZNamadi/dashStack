@@ -60,8 +60,7 @@ export const getPermissions = async (req: Request, res: Response, next: NextFunc
  */
 export const createRole = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name, description, permissions, parentRoleId } = req.body;
-
+    const { name, description, permissions, parentRoleId, organizationId } = req.body;
     if (!name) {
       res.status(400).json({ 
         success: false, 
@@ -69,12 +68,12 @@ export const createRole = async (req: Request, res: Response, next: NextFunction
       });
       return;
     }
-
     const role = await RBACService.createRole({
       name,
       description,
       permissions,
       parentRoleId,
+      organizationId,
     });
 
     // Log the role creation
@@ -223,8 +222,7 @@ export const getUserRoles = async (req: Request, res: Response, next: NextFuncti
  */
 export const assignRoleToUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { userId, roleId, resourceId } = req.body;
-
+    const { userId, roleId, resourceId, organizationId } = req.body;
     if (!userId || !roleId) {
       res.status(400).json({ 
         success: false, 
@@ -232,7 +230,6 @@ export const assignRoleToUser = async (req: Request, res: Response, next: NextFu
       });
       return;
     }
-
     const user = await RBACService.getUserWithRoles(userId);
     if (!user) {
       res.status(404).json({ 
@@ -241,8 +238,7 @@ export const assignRoleToUser = async (req: Request, res: Response, next: NextFu
       });
       return;
     }
-
-    await RBACService.assignRoleToUser(userId, roleId, resourceId);
+    await RBACService.assignRoleToUser(userId, roleId, resourceId, organizationId);
 
     // Log the role assignment
     await AuditService.logPermissionEvent({
@@ -273,8 +269,7 @@ export const assignRoleToUser = async (req: Request, res: Response, next: NextFu
  */
 export const removeRoleFromUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { userId, roleId, resourceId } = req.body;
-
+    const { userId, roleId, resourceId, organizationId } = req.body;
     if (!userId || !roleId) {
       res.status(400).json({ 
         success: false, 
@@ -282,7 +277,6 @@ export const removeRoleFromUser = async (req: Request, res: Response, next: Next
       });
       return;
     }
-
     const user = await RBACService.getUserWithRoles(userId);
     if (!user) {
       res.status(404).json({ 
@@ -291,8 +285,7 @@ export const removeRoleFromUser = async (req: Request, res: Response, next: Next
       });
       return;
     }
-
-    await RBACService.removeRoleFromUser(userId, roleId, resourceId);
+    await RBACService.removeRoleFromUser(userId, roleId, resourceId, organizationId);
 
     // Log the role removal
     await AuditService.logPermissionEvent({
@@ -323,13 +316,13 @@ export const removeRoleFromUser = async (req: Request, res: Response, next: Next
  */
 export const checkPermission = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { userId, permission, resourceId } = req.body;
+    const { userId, permission, resourceId, organizationId } = req.body;
     if (!userId || !permission) {
       res.status(400).json({ success: false, message: 'User ID and permission are required' });
       return;
     }
     const [resource, action] = permission.split(':');
-    const hasPerm = await RBACService.hasPermission(userId, resource, action, resourceId);
+    const hasPerm = await RBACService.hasPermission(userId, resource, action, resourceId, organizationId);
     res.json({ success: true, hasPermission: hasPerm });
   } catch (error) {
     next(error);

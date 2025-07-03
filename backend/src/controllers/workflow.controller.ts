@@ -6,6 +6,7 @@ import { tmpdir } from 'os';
 import prisma from '../utils/prisma';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import { workflowEngine } from '../services/workflow-engine.service';
+import { AuditService } from '../services/audit.service';
 
 export const createWorkflow = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -34,6 +35,25 @@ export const createWorkflow = async (req: Request, res: Response, next: NextFunc
         description,
         logs: [],
       },
+    });
+    // Save initial version
+    await prisma.workflowVersion.create({
+      data: {
+        workflowId: workflow.id,
+        version: 1,
+        content: { name, trigger, type, code, description },
+        createdById: user.userId,
+      },
+    });
+    await AuditService.logCRUDEvent({
+      userId: user.userId,
+      userName: user.name,
+      action: 'create',
+      resource: 'workflow_version',
+      resourceId: workflow.id,
+      resourceName: name,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
     });
     res.status(201).json(workflow);
   } catch (error) {
@@ -133,7 +153,29 @@ export const updateWorkflow = async (req: Request, res: Response, next: NextFunc
         description,
       },
     });
-
+    // Save new version
+    const latestVersion = await prisma.workflowVersion.findFirst({
+      where: { workflowId },
+      orderBy: { version: 'desc' },
+    });
+    await prisma.workflowVersion.create({
+      data: {
+        workflowId,
+        version: latestVersion ? latestVersion.version + 1 : 1,
+        content: { name, trigger, type, code, description },
+        createdById: user.userId,
+      },
+    });
+    await AuditService.logCRUDEvent({
+      userId: user.userId,
+      userName: user.name,
+      action: 'update',
+      resource: 'workflow_version',
+      resourceId: workflowId,
+      resourceName: name,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
     res.json(updatedWorkflow);
   } catch (error) {
     next(error);
@@ -165,11 +207,14 @@ export const runWorkflow = async (req: Request, res: Response, next: NextFunctio
 
     // For /run endpoint: execute synchronously and return result
     try {
+      const start = Date.now();
       const result = await workflowEngine.executeWorkflow({ workflowId, projectId, input });
-      await workflowEngine["logWorkflowExecution"](workflowId, input, result, true);
+      const executionTimeMs = Date.now() - start;
+      await workflowEngine["logWorkflowExecution"](workflowId, input, result, true, undefined, executionTimeMs);
       res.json(result);
     } catch (err) {
-      await workflowEngine["logWorkflowExecution"](workflowId, input, null, false, err instanceof Error ? err.message : String(err));
+      const executionTimeMs = 0; // Could not measure if failed before start
+      await workflowEngine["logWorkflowExecution"](workflowId, input, null, false, err instanceof Error ? err.message : String(err), executionTimeMs);
       throw err;
     }
   } catch (error) {
@@ -377,16 +422,13 @@ export const getWorkflowStats = async (req: Request, res: Response, next: NextFu
     const stats = (workflows: any[]) => {
       return {
         totalWorkflows: workflows.length,
-
         activeTriggers: workflows.filter(
           (w) => Array.isArray(w.triggers) && w.triggers.some((t: any) => t && t.isActive)
         ).length,
-
         totalExecutions: workflows.reduce(
           (sum, w) => sum + (Array.isArray(w.logs) ? w.logs.length : 0),
           0
         ),
-
         successfulExecutions: workflows.reduce(
           (sum, w) =>
             sum +
@@ -395,7 +437,6 @@ export const getWorkflowStats = async (req: Request, res: Response, next: NextFu
               : 0),
           0
         ),
-
         failedExecutions: workflows.reduce(
           (sum, w) =>
             sum +
@@ -404,7 +445,6 @@ export const getWorkflowStats = async (req: Request, res: Response, next: NextFu
               : 0),
           0
         ),
-
         recentExecutions: workflows
           .flatMap((w) =>
             (Array.isArray(w.logs) ? w.logs : [])
@@ -420,6 +460,26 @@ export const getWorkflowStats = async (req: Request, res: Response, next: NextFu
               new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
           )
           .slice(0, 10),
+        // New: per-workflow stats
+        perWorkflow: workflows.map((w) => {
+          const logs = Array.isArray(w.logs) ? w.logs : [];
+          const total = logs.length;
+          const successes = logs.filter((log: any) => log.success).length;
+          const failures = logs.filter((log: any) => !log.success).length;
+          const avgExecutionTime = logs.length > 0
+            ? (logs.reduce((sum: number, log: any) => sum + (log.executionTimeMs || 0), 0) / logs.length)
+            : 0;
+          const errorRate = total > 0 ? failures / total : 0;
+          return {
+            workflowId: w.id,
+            workflowName: w.name,
+            totalExecutions: total,
+            successfulExecutions: successes,
+            failedExecutions: failures,
+            avgExecutionTimeMs: avgExecutionTime,
+            errorRate,
+          };
+        }),
       };
     };
 
@@ -469,6 +529,121 @@ export const deleteWorkflow = async (req: Request, res: Response, next: NextFunc
 
     await prisma.workflow.delete({ where: { id: workflowId } });
     res.json({ message: 'Workflow deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getWorkflowVersions = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    const { projectId, workflowId } = req.params;
+    // Verify access
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: workflowId, projectId, project: { ownerId: user.userId } },
+    });
+    if (!workflow) {
+      res.status(404).json({ message: 'Workflow not found or you do not have access' });
+      return;
+    }
+    const versions = await prisma.workflowVersion.findMany({
+      where: { workflowId },
+      orderBy: { version: 'desc' },
+    });
+    res.json(versions);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getWorkflowVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    const { projectId, workflowId, versionId } = req.params;
+    // Verify access
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: workflowId, projectId, project: { ownerId: user.userId } },
+    });
+    if (!workflow) {
+      res.status(404).json({ message: 'Workflow not found or you do not have access' });
+      return;
+    }
+    const version = await prisma.workflowVersion.findUnique({ where: { id: versionId } });
+    if (!version) {
+      res.status(404).json({ message: 'Version not found' });
+      return;
+    }
+    res.json(version);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const revertWorkflowVersion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    const { projectId, workflowId, versionId } = req.params;
+    // Verify access
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: workflowId, projectId, project: { ownerId: user.userId } },
+    });
+    if (!workflow) {
+      res.status(404).json({ message: 'Workflow not found or you do not have access' });
+      return;
+    }
+    const version = await prisma.workflowVersion.findUnique({ where: { id: versionId } });
+    if (!version) {
+      res.status(404).json({ message: 'Version not found' });
+      return;
+    }
+    // Revert workflow to this version
+    const content = version.content as any;
+    const reverted = await prisma.workflow.update({
+      where: { id: workflowId },
+      data: {
+        name: content.name,
+        trigger: content.trigger,
+        type: content.type,
+        code: content.code,
+        description: content.description,
+      },
+    });
+    // Save new version for the revert
+    const latestVersion = await prisma.workflowVersion.findFirst({
+      where: { workflowId },
+      orderBy: { version: 'desc' },
+    });
+    await prisma.workflowVersion.create({
+      data: {
+        workflowId,
+        version: latestVersion ? latestVersion.version + 1 : 1,
+        content,
+        createdById: user.userId,
+      },
+    });
+    await AuditService.logCRUDEvent({
+      userId: user.userId,
+      userName: user.name,
+      action: 'update',
+      resource: 'workflow_version',
+      resourceId: workflowId,
+      resourceName: content.name,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+    res.json(reverted);
   } catch (error) {
     next(error);
   }
